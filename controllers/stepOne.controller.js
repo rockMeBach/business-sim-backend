@@ -19,10 +19,14 @@ exports.getStepOneOptions = async (req, res) => {
 
 exports.saveStepOne = async (req, res) => {
   try {
-    const { userId, simulationId, businessModelId, marketPositionIds } = req.body;
+    const { userId, simulationId, roundNumber, businessModelId, marketPositionIds } = req.body;
 
     if (!userId || !simulationId) {
       return res.status(400).json({ message: "userId and simulationId are required" });
+    }
+
+    if (!roundNumber) {
+      return res.status(400).json({ message: "roundNumber is required" });
     }
 
     if (!businessModelId) {
@@ -34,7 +38,7 @@ exports.saveStepOne = async (req, res) => {
     }
 
     const stepOne = await PlayerStepOne.findOneAndUpdate(
-      { userId, simulationId },
+      { userId, simulationId, roundNumber },
       {
         businessModelId,
         marketPositionIds

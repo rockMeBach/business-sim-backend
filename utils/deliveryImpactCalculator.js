@@ -1,7 +1,55 @@
+// STEP 2 — Bike-Rider Optimization (Excel row 18).
+// V18 = IF(riders/bikes < low, below, IF(riders/bikes > high, above, optimal))
+const DEFAULT_BIKE_RIDER_BANDS = {
+  lowThreshold: 2.5,
+  highThreshold: 3.5,
+  belowMultiplier: 0.85,
+  optimalMultiplier: 1.05,
+  aboveMultiplier: 0.95
+};
+
+function computeBikeRiderOptimization(config, deliveryFleet) {
+  const bands = { ...DEFAULT_BIKE_RIDER_BANDS, ...(config.bikeRiderRatioBands || {}) };
+  const riders = deliveryFleet?.ridersPerCity || 0;
+  const bikes = deliveryFleet?.bikesPerCity || 0;
+
+  // Only meaningful with an own fleet that actually has bikes and riders.
+  if (!deliveryFleet?.ownFleet || riders <= 0 || bikes <= 0) {
+    return { ratio: 0, multiplier: 1, band: "n/a" };
+  }
+
+  const ratio = riders / bikes;
+  let multiplier;
+  let band;
+  if (ratio < bands.lowThreshold) {
+    multiplier = bands.belowMultiplier;
+    band = "underutilized"; // too many bikes for the number of riders
+  } else if (ratio > bands.highThreshold) {
+    multiplier = bands.aboveMultiplier;
+    band = "overloaded"; // too few bikes for the number of riders
+  } else {
+    multiplier = bands.optimalMultiplier;
+    band = "optimal";
+  }
+
+  return { ratio: Math.round(ratio * 100) / 100, multiplier, band };
+}
+
+exports.computeBikeRiderOptimization = computeBikeRiderOptimization;
+
 exports.calculateDeliveryImpact = ({
   config,
   deliveryFleet,
-  logisticsOptimization
+  logisticsOptimization,
+  // Total demand (sum of ProductCategory.baseMonthlyDemand across active
+  // categories) a fleet needs to cover before third-party delivery kicks
+  // in. Was hardcoded to 50000, disconnected from the real per-round total
+  // (10650 with the seeded Food/Mobile/Clothes categories) — every player's
+  // fleet, even at DeliveryConfig's own advertised max (20 riders/10
+  // bikes, 15000 capacity), was guaranteed to trigger a massive third-party
+  // penalty regardless of choice. Falls back to the old constant if the
+  // caller doesn't have category data on hand.
+  estimatedMonthlyDemand = 50000
 }) => {
 
   let cost = 0;
@@ -25,8 +73,6 @@ exports.calculateDeliveryImpact = ({
   let ownFleetCapacity = 0;
 
   if (deliveryFleet.ownFleet) {
-    cost += config.ownFleet.setupCost.min;
-
     kpis.deliveryQuality += 15;
     kpis.brandPerception += 10;
     kpis.operationalComplexity += 15;
@@ -75,7 +121,6 @@ exports.calculateDeliveryImpact = ({
   }
 
 
-  const estimatedMonthlyDemand = 50000;
   const excessDemand = Math.max(0, estimatedMonthlyDemand - ownFleetCapacity);
   const thirdPartyIsUsed = excessDemand > 0;
 
@@ -170,10 +215,13 @@ exports.calculateDeliveryImpact = ({
     kpis[key] = Math.max(0, Math.min(100, Math.round(kpis[key])));
   });
 
+  const bikeRiderOptimization = computeBikeRiderOptimization(config, deliveryFleet);
+
   return {
     totalCost: Math.round(cost),
      electricBikeCost,
     kpis,
+    bikeRiderOptimization,
     thirdPartyDetails,
     capacityInfo: {
       ownFleetCapacity,

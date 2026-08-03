@@ -12,6 +12,11 @@ const playerStepOneSchema = new mongoose.Schema({
     required: true
   },
 
+  roundNumber: {
+    type: Number,
+    required: true
+  },
+
   businessModelId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "BusinessModelOption",

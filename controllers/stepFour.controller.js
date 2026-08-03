@@ -1,6 +1,17 @@
 const PlayerStepFour = require("../models/PlayerStepFour");
 const DeliveryConfig = require("../models/DeliveryConfig");
-const { calculateDeliveryImpact } = require("../utils/deliveryImpactCalculator");
+const ProductCategory = require("../models/ProductCategory");
+const {
+  calculateDeliveryImpact,
+  computeBikeRiderOptimization
+} = require("../utils/deliveryImpactCalculator");
+
+// Real per-round demand a fleet needs to cover, replacing what used to be a
+// flat hardcoded 50000 disconnected from the actual seeded categories.
+async function getEstimatedMonthlyDemand() {
+  const categories = await ProductCategory.find({ isActive: true }, "baseMonthlyDemand");
+  return categories.reduce((sum, c) => sum + (c.baseMonthlyDemand || 0), 0);
+}
 
 exports.saveStepFour = async (req, res) => {
   try {
@@ -24,7 +35,8 @@ exports.saveStepFour = async (req, res) => {
     const result = calculateDeliveryImpact({
       config,
       deliveryFleet,
-      logisticsOptimization
+      logisticsOptimization,
+      estimatedMonthlyDemand: await getEstimatedMonthlyDemand()
     });
 
    if (deliveryFleet.electricBikes?.enabled) {
@@ -38,6 +50,7 @@ exports.saveStepFour = async (req, res) => {
       {
         deliveryFleet,
         logisticsOptimization,
+        bikeRiderOptimization: result.bikeRiderOptimization,
         totalMonthlyCost: result.totalCost,
         kpis: result.kpis
       },
@@ -75,8 +88,6 @@ exports.calculateStepFour = async (req, res) => {
     let electricBikeCost = 0;
 
     if (deliveryFleet.ownFleet) {
-      deliveryFleetImpact.cost += config.ownFleet.setupCost.min;
-
       deliveryFleetImpact.cost +=
         deliveryFleet.ridersPerCity *
         config.ownFleet.riderCostPerMonth.min;
@@ -109,7 +120,7 @@ exports.calculateStepFour = async (req, res) => {
           Math.floor(deliveryFleet.electricBikes.percentage / 2);
       }
     }
-    const estimatedMonthlyDemand = 50000;
+    const estimatedMonthlyDemand = await getEstimatedMonthlyDemand();
     const excessDemand = Math.max(0, estimatedMonthlyDemand - ownFleetCapacity);
     const thirdPartyIsUsed = excessDemand > 0;
 
@@ -168,11 +179,14 @@ exports.calculateStepFour = async (req, res) => {
       thirdPartyImpact.cost +
       logisticsImpact.cost;
 
+    const bikeRiderOptimization = computeBikeRiderOptimization(config, deliveryFleet);
+
     return res.json({
       deliveryFleet: {
         ...deliveryFleetImpact,
         electricBikeCost
       },
+      bikeRiderOptimization,
       thirdPartyDelivery: thirdPartyImpact,
       logisticsOptimization: logisticsImpact,
       totalCost,

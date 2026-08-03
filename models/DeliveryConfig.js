@@ -72,6 +72,19 @@ const DeliveryConfigSchema = new mongoose.Schema({
       cost: Number,
       multiplierBySegment: segmentMultiplierSchema
     }
+  },
+
+  // STEP 2 — Bike-Rider Optimization (Excel row 18 "Indi Efficiency").
+  // Auto-derived multiplier from the riders/bikes ratio:
+  //   ratio < lowThreshold           -> belowMultiplier   (too many bikes idle)
+  //   lowThreshold <= ratio <= high  -> optimalMultiplier  (best efficiency)
+  //   ratio > highThreshold          -> aboveMultiplier    (too few bikes)
+  bikeRiderRatioBands: {
+    lowThreshold:      { type: Number, default: 2.5 },
+    highThreshold:     { type: Number, default: 3.5 },
+    belowMultiplier:   { type: Number, default: 0.85 },
+    optimalMultiplier: { type: Number, default: 1.05 },
+    aboveMultiplier:   { type: Number, default: 0.95 }
   }
 });
 

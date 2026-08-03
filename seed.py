@@ -40,7 +40,7 @@ CONFIG_COLLECTIONS = [
 ]
 PLAYER_COLLECTIONS = [
     "playerstepones", "playerstepfours", "playerstepfives",
-    "playerstepeights", "playerstepnines",
+    "playerstepeights", "playerstepnines", "userselections",
     "playerproductcategories", "pricingdecisions",
     "teamprofiles",
 ]
@@ -144,9 +144,10 @@ delivery_config = {
             "multiplierBySegment": {"premium": 1.07, "standard": 1.07, "basic": 1.07, "discount": 1.07},
         },
     },
-    # Non-schema extras stored for the engine to use for ratio banding:
+    # Bike-Rider Optimization ratio bands (Excel row 18 / C18-E18, C19-D19):
+    #   V18 = IF(riders/bikes < 2.5, 0.85, IF(riders/bikes > 3.5, 0.95, 1.05))
     "bikeRiderRatioBands": {"lowThreshold": 2.5, "highThreshold": 3.5,
-                            "lowMultiplier": 0.85, "midMultiplier": 0.95, "highMultiplier": 1.05},
+                            "belowMultiplier": 0.85, "optimalMultiplier": 1.05, "aboveMultiplier": 0.95},
 }
 db.deliveryconfigs.insert_one(delivery_config)
 print("Inserted delivery config.")
@@ -465,8 +466,18 @@ for i, uid in enumerate(user_ids):
     db.playerstepones.insert_one({
         "userId": uid,
         "simulationId": sim_id,
+        "roundNumber": 1,
         "businessModelId": bm_ids[p1["business"]],
         "marketPositionIds": [mp_ids[j] for j in p1["positions"]],
+        "createdAt": now, "updatedAt": now,
+    })
+
+    # --- Sourcing selection (Step 4) — cycle through the 5 seeded suppliers ---
+    db.userselections.insert_one({
+        "userId": uid,
+        "simulationId": sim_id,
+        "roundNumber": 1,
+        "supplierId": supplier_ids[i % len(supplier_ids)],
         "createdAt": now, "updatedAt": now,
     })
 
@@ -579,6 +590,9 @@ for i, uid in enumerate(user_ids):
     })
 
     # --- Player Step Eight (Marketing) ---
+    # NOTE: shape mirrors controllers/stepEight.controller.js's calculateMarketing()
+    # contract exactly (acquisition/retention/partnerships groups) — this is what
+    # the real frontend (MarketingSection.tsx) actually sends, unlike a flat object.
     mkt_breakdown = {
         "googleAds":          GOOGLE_ADS[i]   * 25000,
         "facebookAds":        FACEBOOK_ADS[i] * 20000,
@@ -597,18 +611,24 @@ for i, uid in enumerate(user_ids):
     db.playerstepeights.insert_one({
         "userId": str(uid), "simulationId": str(sim_id), "roundNumber": 1,
         "marketing": {
-            "googleAds":          GOOGLE_ADS[i],
-            "facebookAds":        FACEBOOK_ADS[i],
-            "referralProgram":    bool(REFERRAL[i]),
-            "firstOrderDiscount": bool(FIRST_ORDER[i]),
-            "influencerMarketing":bool(INFLUENCER[i]),
-            "cashbackOption":     bool(CASHBACK[i]),
-            "loyaltyProgram":     bool(LOYALTY[i]),
-            "pushNotifications":  bool(PUSH_NOTIF[i]),
-            "emailAndSMS":        bool(EMAIL_SMS[i]),
-            "creditCardOffers":   bool(CREDIT_CARD[i]),
-            "corporateTieUps":    bool(CORP_TIE_UPS[i]),
-            "housingSociety":     bool(HOUSING_SOC[i]),
+            "acquisition": {
+                "googleAds":           {"enabled": GOOGLE_ADS[i] > 0,   "budget": GOOGLE_ADS[i] * 25000},
+                "facebookAds":         {"enabled": FACEBOOK_ADS[i] > 0, "budget": FACEBOOK_ADS[i] * 20000},
+                "referralProgram":     {"enabled": bool(REFERRAL[i])},
+                "firstOrderDiscount":  {"enabled": bool(FIRST_ORDER[i])},
+                "influencerMarketing": {"enabled": bool(INFLUENCER[i]), "budget": INFLUENCER[i] * 110000},
+            },
+            "retention": {
+                "cashbackCoupons":    {"enabled": bool(CASHBACK[i]),   "cost": CASHBACK[i] * 95000},
+                "loyaltyProgram":     {"enabled": bool(LOYALTY[i]),    "cost": LOYALTY[i] * 156000},
+                "pushNotifications":  {"enabled": bool(PUSH_NOTIF[i]), "cost": PUSH_NOTIF[i] * 80000},
+                "emailSms":           {"enabled": bool(EMAIL_SMS[i]),  "budget": EMAIL_SMS[i] * 60000},
+            },
+            "partnerships": {
+                "creditCardOffers": {"enabled": bool(CREDIT_CARD[i])},
+                "corporateTieups":  {"enabled": bool(CORP_TIE_UPS[i])},
+                "housingComplexes": {"enabled": bool(HOUSING_SOC[i]), "cost": HOUSING_SOC[i] * 120000},
+            },
         },
         "totalCost": marketing_cost,
         "breakdown": mkt_breakdown,
@@ -616,6 +636,24 @@ for i, uid in enumerate(user_ids):
     })
 
     # --- Player Step Nine (Operations HR) ---
+    # corporateTeam headcount buckets mirror OperationsStaffingConfig's keys
+    # (matches OperationsSection.tsx's employee->bucket mapping: CEO->founders,
+    # COO->operationsTeam, CTO->techTeam, CMO->marketingTeam,
+    # Head Supply->supplyChainTeam, Head Category->categoryTeam).
+    #
+    # NOTE on Excel parity: the workbook's "Corporate Team Size" (row 70) is a
+    # single flat dollar figure per player (50000/40000/80000/70000/60000/
+    # 100000) used directly for both HR cost AND the group min/mid/max
+    # multiplier lookup. This app replaced that with a real headcount x
+    # role-salary cost model (a deliberate richer feature from the HR/Ops
+    # rewire) — its minimum possible spend (all 6 mandatory roles at
+    # headcount 1, ~342500) already exceeds the Excel's entire target range,
+    # so the two can never match in absolute rupees. techTeam headcount is
+    # varied per player (1..6) purely to reproduce the Excel's *relative*
+    # ranking (player2 < player1 < player5 < player4 < player3 < player6) so
+    # the group-relative min/mid/max mechanic is exercised non-degenerately
+    # instead of leaving 5 of 6 players tied at the minimum.
+    TECH_TEAM_HEADCOUNT = [2, 1, 5, 4, 3, 6]
     rider_bonus_cost = RIDER_BONUS_PCT[i] * RIDERS[i] * 30000
     edu_cost         = EDUCATION_BUDG[i]  * 50000
     hr_total = CORPORATE_SPEND[i] + rider_bonus_cost + edu_cost
@@ -623,11 +661,10 @@ for i, uid in enumerate(user_ids):
         "userId": uid, "simulationId": sim_id, "roundNumber": 1,
         "darkStoreStaff": {"pickersPackers": 4, "storeManager": 1},
         "deliveryStaff":  {"deliveryRiders": RIDERS[i], "riderSupervisors": 1},
-        "corporateTeam":  {"corporateSpend": CORPORATE_SPEND[i],
-                           "educationBudgetUnits": EDUCATION_BUDG[i],
-                           "educationSpend": edu_cost,
-                           "riderBonusPercent": RIDER_BONUS_PCT[i],
-                           "riderBonusSpend": rider_bonus_cost},
+        "corporateTeam":  {"founders": 1, "operationsTeam": 1, "techTeam": TECH_TEAM_HEADCOUNT[i],
+                           "marketingTeam": 1, "supplyChainTeam": 1, "categoryTeam": 1},
+        "educationBudgetPerRider": edu_cost,
+        "riderBonusBudget": rider_bonus_cost,
         "totalMonthlyCost": hr_total,
         "kpis": {"quality": 55 + 10*EDUCATION_BUDG[i],
                  "speed": 60, "coverage": 55, "scalability": 55,
@@ -682,7 +719,7 @@ for i, uid in enumerate(user_ids):
     })
 
 print(f"Inserted decisions for {len(user_ids)} players (steps 1, 4, 5, 8, 9 + pricing).")
-print("\n✅ Seed complete.")
+print("\nSeed complete.")
 print(f"   Simulation ID : {sim_id}")
 print(f"   Group ID      : {group_id}")
 print(f"   User IDs      : {[str(u) for u in user_ids]}")

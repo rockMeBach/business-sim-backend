@@ -20,6 +20,9 @@ const playerStepNineSchema = new mongoose.Schema({
   deliveryStaff: Object,
   corporateTeam: Object,
 
+  educationBudgetPerRider: { type: Number, default: 0 },
+  riderBonusBudget: { type: Number, default: 0 },
+
   totalMonthlyCost: {
     type: Number,
     required: true

@@ -8,10 +8,17 @@ const segmentMultiplierSchema = {
 };
 
 const marketingItemSchema = {
-  appliesTo: String,          
+  appliesTo: String,
   cost: Number,
-  multiplier: Number,
-  multiplierBySegment: segmentMultiplierSchema
+  multiplier: Number,           // legacy/flat field — NOT read by the scoring engine, kept for existing readers
+  multiplierBySegment: segmentMultiplierSchema,
+  // Only populated for slider-style items (googleAds, facebookAds): the
+  // engine computes 1 + (spend * rate / divisor). Absent for flat items,
+  // which instead use IF(cost>0, multiplierBySegment[seg], 1).
+  sliderConfig: {
+    rate: Number,
+    divisor: Number
+  }
 };
 
 const marketingConfigSchema = new mongoose.Schema({
@@ -37,8 +44,8 @@ const marketingConfigSchema = new mongoose.Schema({
 
   totalInvestmentAverage: {
     appliesTo: String,
-    multiplier: Number,
-    cost: Number
+    belowAverageMultiplier: Number,        // e.g. 0.9
+    atOrAboveAverageMultiplier: Number      // e.g. 1
   }
 
 }, { timestamps: true });

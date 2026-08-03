@@ -2,12 +2,26 @@ const UserSelection = require("../models/UserSelection");
 
 exports.saveSelection = async (req, res) => {
   try {
-    const { userId, supplierId } = req.body;
+    const { userId, simulationId, roundNumber, supplierId } = req.body;
 
     if (!userId) {
       return res.status(400).json({
         success: false,
         message: "User ID is required"
+      });
+    }
+
+    if (!simulationId) {
+      return res.status(400).json({
+        success: false,
+        message: "Simulation ID is required"
+      });
+    }
+
+    if (!roundNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Round number is required"
       });
     }
 
@@ -19,9 +33,11 @@ exports.saveSelection = async (req, res) => {
     }
 
     const selection = await UserSelection.findOneAndUpdate(
-      { userId },
-      { 
+      { userId, simulationId, roundNumber },
+      {
         userId,
+        simulationId,
+        roundNumber,
         supplierId
       },
       { new: true, upsert: true }

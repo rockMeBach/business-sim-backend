@@ -37,6 +37,13 @@ const PlayerStepFourSchema = new mongoose.Schema({
     hyperlocalWarehousing: Boolean
   },
 
+  // Auto-derived from the riders/bikes ratio (Excel Step 2 "Bike-Rider Optimization")
+  bikeRiderOptimization: {
+    ratio: Number,
+    multiplier: Number,
+    band: String
+  },
+
   totalMonthlyCost: Number,
 
   kpis: {

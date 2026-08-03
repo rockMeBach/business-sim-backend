@@ -23,6 +23,14 @@ const technologyItemSchema = {
   multiplierBySegment: {
     type: segmentMultiplierSchema,
     required: true
+  },
+
+  // Only populated for the slider-style item (websiteDevelopment): the
+  // engine computes 1 + (units * cost * rate / divisor). Absent for flat
+  // items, which use IF(cost>0, multiplierBySegment[seg], 1).
+  sliderConfig: {
+    rate: Number,
+    divisor: Number
   }
 };
 
@@ -40,6 +48,15 @@ const TechnologyConfigSchema = new mongoose.Schema({
     demandForecastingAI: technologyItemSchema,
     dynamicPricing: technologyItemSchema,
     supplyChainAnalytics: technologyItemSchema
+  },
+
+  // Excel row 32 "Total investment/average" — competitive bonus/penalty
+  // applied on top of the PRODUCT chain based on this player's total tech
+  // spend vs. the average spend across the group.
+  totalInvestmentAverage: {
+    appliesTo: String,
+    belowAverageMultiplier: Number,        // e.g. 0.9
+    atOrAboveAverageMultiplier: Number      // e.g. 1
   }
 }, { timestamps: true });
 

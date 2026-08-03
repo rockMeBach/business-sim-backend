@@ -61,5 +61,6 @@ app.use("/api/category-analysis", require("./routes/categoryAnalysis.routes"));
 app.use("/api/analysis", analysisRoutes);
 app.use("/api/news", newsRoutes);
 app.use("/api/business-plan", require("./routes/businessPlanRoutes"));
+app.use("/api/scoring", require("./routes/scoring.routes"));
 const PORT = process.env.PORT || 80;
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
