@@ -43,7 +43,13 @@ const ProductCategorySchema = new mongoose.Schema({
     type: String,
     enum: ["less", "med", "high", "veryHigh"],
     default: "med"
-  }
+  },
+
+  // Player-created categories (added mid-game, alongside the admin-seeded
+  // ones) are scoped to their creator via createdByUserId — only that
+  // player sees/selects them, and only they can delete them.
+  isCustom: { type: Boolean, default: false },
+  createdByUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null }
 });
 
 module.exports = mongoose.model("ProductCategory", ProductCategorySchema);

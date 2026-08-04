@@ -20,8 +20,9 @@ const PlayerProductCategorySchema = new mongoose.Schema({
         basic: Number,
         discount: Number
       },
-      inventoryRange: String,      
-      monthlyDemand: Number        
+      inventoryRange: String,
+      monthlyDemand: Number,
+      warehouseCapacity: Number
     }
   ]
 });

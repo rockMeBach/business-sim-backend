@@ -207,6 +207,10 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
     const enrolledScores = enrolledIndexes.map((i) => perPlayerSegmentScores[i]);
 
     enrolledIndexes.forEach((playerIndex, poolIndex) => {
+      const playerCategoryEntry = decisions[playerIndex].productCategory?.categories?.find(
+        (c) => String(c.categoryId) === String(category._id)
+      );
+
       const marketShareBySegment = computeMarketShareResult({
         allPlayersSegmentScores: enrolledScores,
         thisPlayerIndex: poolIndex,
@@ -214,7 +218,8 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
         localCompetitionIntensityPercent: intensity,
         qualityPricing: basics[playerIndex].qualityPricing,
         unitCostBasis: basics[playerIndex].unitCostBasis,
-        fulfillmentRate: basics[playerIndex].fulfillmentRate
+        fulfillmentRate: basics[playerIndex].fulfillmentRate,
+        warehouseCapacity: playerCategoryEntry?.warehouseCapacity
       });
 
       const segments = {};

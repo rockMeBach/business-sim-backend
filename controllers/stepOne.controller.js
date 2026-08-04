@@ -29,10 +29,6 @@ exports.saveStepOne = async (req, res) => {
       return res.status(400).json({ message: "roundNumber is required" });
     }
 
-    if (!businessModelId) {
-      return res.status(400).json({ message: "Business Model is required" });
-    }
-
     if (!marketPositionIds || !Array.isArray(marketPositionIds) || marketPositionIds.length === 0) {
       return res.status(400).json({ message: "At least one Market Position is required" });
     }

@@ -34,6 +34,10 @@ const { SEGMENTS } = require("./segments");
  * @param qualityPricing { spMultBase, cpMult, baseUnitPrice } for this player.
  * @param unitCostBasis rupee cost per unit used for COGS (supplier.costPerUnit, or baseUnitPrice as fallback).
  * @param fulfillmentRate fraction (0,1] of Expected Sale the chosen supplier can actually deliver this round.
+ * @param warehouseCapacity optional cap (units/month, summed across all 4 segments) on how much of this
+ *   category this player can actually move this round, from the player's own Product Categories input
+ *   (PlayerProductCategory.categories[].warehouseCapacity). Not in the original workbook — added so the
+ *   capacity number players type in actually constrains their sales instead of being purely decorative.
  */
 function computeMarketShareResult({
   allPlayersSegmentScores,
@@ -42,7 +46,8 @@ function computeMarketShareResult({
   localCompetitionIntensityPercent,
   qualityPricing,
   unitCostBasis,
-  fulfillmentRate
+  fulfillmentRate,
+  warehouseCapacity
 }) {
   const result = {};
   const cogsUnitCost = unitCostBasis ?? qualityPricing.baseUnitPrice;
@@ -67,6 +72,30 @@ function computeMarketShareResult({
       marketShare, expectedSale, actualSold, wastedDemand,
       expectedRevenue, cogs, grossProfit, totalMarketSize
     };
+  }
+
+  // Capacity is a single monthly number for the whole category (not
+  // per-segment), so if the segments' combined actualSold exceeds it, every
+  // segment absorbs the cut proportionally to its own pre-cap actualSold —
+  // no segment is favored/starved outright. The shaved-off units join
+  // wastedDemand (same treatment as a supplier fulfillment shortfall) and
+  // revenue/COGS/grossProfit are recomputed off the reduced actualSold.
+  if (warehouseCapacity != null && warehouseCapacity >= 0) {
+    const totalActualSold = SEGMENTS.reduce((sum, s) => sum + result[s].actualSold, 0);
+    if (totalActualSold > warehouseCapacity) {
+      const scale = totalActualSold > 0 ? warehouseCapacity / totalActualSold : 0;
+      for (const segment of SEGMENTS) {
+        const seg = result[segment];
+        const cappedActualSold = seg.actualSold * scale;
+        const capacityLoss = seg.actualSold - cappedActualSold;
+
+        seg.actualSold = cappedActualSold;
+        seg.wastedDemand += capacityLoss;
+        seg.expectedRevenue = cappedActualSold * qualityPricing.spMultBase * qualityPricing.baseUnitPrice;
+        seg.cogs = cappedActualSold * qualityPricing.cpMult * cogsUnitCost;
+        seg.grossProfit = seg.expectedRevenue - seg.cogs;
+      }
+    }
   }
 
   return result;
