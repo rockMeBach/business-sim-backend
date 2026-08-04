@@ -3,8 +3,10 @@ const mongoose = require("mongoose");
 const UserSchema = new mongoose.Schema({
   username: {
     type: String,
-    required: true,
-    unique: true
+    required: true
+    // No longer globally unique — see the compound index below. Different
+    // groups each field their own "player1".."playerN" roster, so the same
+    // username must be allowed to exist once PER GROUP.
   },
     email: {
     type: String,
@@ -25,5 +27,10 @@ const UserSchema = new mongoose.Schema({
     required: true
   }
 });
+
+// Login now looks a user up by {username, groupId} (the group is chosen via
+// a dropdown before the user types their credentials), so uniqueness only
+// needs to hold within a group, not across the whole simulation/DB.
+UserSchema.index({ username: 1, groupId: 1 }, { unique: true });
 
 module.exports = mongoose.model("User", UserSchema);
