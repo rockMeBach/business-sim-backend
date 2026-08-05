@@ -34,10 +34,10 @@ const { SEGMENTS } = require("./segments");
  * @param qualityPricing { spMultBase, cpMult, baseUnitPrice } for this player.
  * @param unitCostBasis rupee cost per unit used for COGS (supplier.costPerUnit, or baseUnitPrice as fallback).
  * @param fulfillmentRate fraction (0,1] of Expected Sale the chosen supplier can actually deliver this round.
- * @param warehouseCapacity optional cap (units/month, summed across all 4 segments) on how much of this
- *   category this player can actually move this round, from the player's own Product Categories input
- *   (PlayerProductCategory.categories[].warehouseCapacity). Not in the original workbook — added so the
- *   capacity number players type in actually constrains their sales instead of being purely decorative.
+ *
+ * Warehouse capacity is NOT applied here — it is one shared cap across every
+ * category, so it can only be enforced once all categories are known. See
+ * applyPooledWarehouseCapacity below.
  */
 function computeMarketShareResult({
   allPlayersSegmentScores,
@@ -46,8 +46,7 @@ function computeMarketShareResult({
   localCompetitionIntensityPercent,
   qualityPricing,
   unitCostBasis,
-  fulfillmentRate,
-  warehouseCapacity
+  fulfillmentRate
 }) {
   const result = {};
   const cogsUnitCost = unitCostBasis ?? qualityPricing.baseUnitPrice;
@@ -74,31 +73,59 @@ function computeMarketShareResult({
     };
   }
 
-  // Capacity is a single monthly number for the whole category (not
-  // per-segment), so if the segments' combined actualSold exceeds it, every
-  // segment absorbs the cut proportionally to its own pre-cap actualSold —
-  // no segment is favored/starved outright. The shaved-off units join
-  // wastedDemand (same treatment as a supplier fulfillment shortfall) and
-  // revenue/COGS/grossProfit are recomputed off the reduced actualSold.
-  if (warehouseCapacity != null && warehouseCapacity >= 0) {
-    const totalActualSold = SEGMENTS.reduce((sum, s) => sum + result[s].actualSold, 0);
-    if (totalActualSold > warehouseCapacity) {
-      const scale = totalActualSold > 0 ? warehouseCapacity / totalActualSold : 0;
-      for (const segment of SEGMENTS) {
-        const seg = result[segment];
-        const cappedActualSold = seg.actualSold * scale;
-        const capacityLoss = seg.actualSold - cappedActualSold;
+  return result;
+}
 
+/**
+ * One warehouse serves every category, so the monthly capacity a player
+ * enters is a single pooled cap on total units moved — not a per-category
+ * one. If combined actualSold across every category AND segment exceeds it,
+ * each segment absorbs the cut proportionally to its own pre-cap actualSold,
+ * so no category or segment is favored/starved outright. Shaved-off units
+ * join wastedDemand (same treatment as a supplier fulfillment shortfall) and
+ * revenue/COGS/grossProfit are recomputed off the reduced actualSold.
+ *
+ * Mutates `perCategory` in place and returns the post-cap totals so callers
+ * don't have to re-derive them.
+ *
+ * @param perCategory Array<{ segments: { premium, standard, basic, discount } }> for ONE player.
+ * @param warehouseCapacity pooled units/month cap; null/undefined means uncapped.
+ * @param qualityPricing { spMultBase, cpMult, baseUnitPrice } for this player.
+ * @param unitCostBasis rupee cost per unit used for COGS.
+ */
+function applyPooledWarehouseCapacity({ perCategory, warehouseCapacity, qualityPricing, unitCostBasis }) {
+  const cogsUnitCost = unitCostBasis ?? qualityPricing.baseUnitPrice;
+
+  const totalActualSold = perCategory.reduce(
+    (sum, cat) => sum + SEGMENTS.reduce((s, seg) => s + cat.segments[seg].actualSold, 0),
+    0
+  );
+
+  const capped = warehouseCapacity != null && warehouseCapacity >= 0 && totalActualSold > warehouseCapacity;
+  const scale = capped ? (totalActualSold > 0 ? warehouseCapacity / totalActualSold : 0) : 1;
+
+  let totalRevenue = 0, totalCogs = 0, totalGrossProfit = 0;
+
+  for (const cat of perCategory) {
+    for (const segment of SEGMENTS) {
+      const seg = cat.segments[segment];
+
+      if (capped) {
+        const cappedActualSold = seg.actualSold * scale;
+        seg.wastedDemand += seg.actualSold - cappedActualSold;
         seg.actualSold = cappedActualSold;
-        seg.wastedDemand += capacityLoss;
         seg.expectedRevenue = cappedActualSold * qualityPricing.spMultBase * qualityPricing.baseUnitPrice;
         seg.cogs = cappedActualSold * qualityPricing.cpMult * cogsUnitCost;
         seg.grossProfit = seg.expectedRevenue - seg.cogs;
       }
+
+      totalRevenue += seg.expectedRevenue;
+      totalCogs += seg.cogs;
+      totalGrossProfit += seg.grossProfit;
     }
   }
 
-  return result;
+  return { totalRevenue, totalCogs, totalGrossProfit };
 }
 
-module.exports = { computeMarketShareResult };
+module.exports = { computeMarketShareResult, applyPooledWarehouseCapacity };

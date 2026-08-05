@@ -325,13 +325,16 @@ print(f"Inserted {len(BUSINESS_MODELS)} business models + {len(MARKET_POSITIONS)
 # ==================================================================
 # Employees (roster for HR step)
 # ==================================================================
+# profileImage paths resolve against the frontend's public/ folder
+# (Sim_Quick_commerce-main/public/avatars/*.svg). EmployeeCard falls back to
+# initials if a file is ever missing.
 EMPLOYEES = [
-    {"name": "Ravi Sharma",   "role": "CEO",           "expertise": "Strategy",   "salaryPerMonth": 250000, "isTopManagement": True,  "profileImage": ""},
-    {"name": "Priya Iyer",    "role": "COO",           "expertise": "Operations", "salaryPerMonth": 200000, "isTopManagement": True,  "profileImage": ""},
-    {"name": "Arjun Mehta",   "role": "CTO",           "expertise": "Technology", "salaryPerMonth": 220000, "isTopManagement": True,  "profileImage": ""},
-    {"name": "Neha Verma",    "role": "CMO",           "expertise": "Marketing",  "salaryPerMonth": 190000, "isTopManagement": True,  "profileImage": ""},
-    {"name": "Karan Patel",   "role": "Head Supply",   "expertise": "Supply",     "salaryPerMonth": 170000, "isTopManagement": False, "profileImage": ""},
-    {"name": "Ishita Rao",    "role": "Head Category", "expertise": "Category",   "salaryPerMonth": 160000, "isTopManagement": False, "profileImage": ""},
+    {"name": "Ravi Sharma",   "role": "CEO",           "expertise": "Strategy",   "salaryPerMonth": 250000, "isTopManagement": True,  "profileImage": "/avatars/ravi-sharma.svg"},
+    {"name": "Priya Iyer",    "role": "COO",           "expertise": "Operations", "salaryPerMonth": 200000, "isTopManagement": True,  "profileImage": "/avatars/priya-iyer.svg"},
+    {"name": "Arjun Mehta",   "role": "CTO",           "expertise": "Technology", "salaryPerMonth": 220000, "isTopManagement": True,  "profileImage": "/avatars/arjun-mehta.svg"},
+    {"name": "Neha Verma",    "role": "CMO",           "expertise": "Marketing",  "salaryPerMonth": 190000, "isTopManagement": True,  "profileImage": "/avatars/neha-verma.svg"},
+    {"name": "Karan Patel",   "role": "Head Supply",   "expertise": "Supply",     "salaryPerMonth": 170000, "isTopManagement": False, "profileImage": "/avatars/karan-patel.svg"},
+    {"name": "Ishita Rao",    "role": "Head Category", "expertise": "Category",   "salaryPerMonth": 160000, "isTopManagement": False, "profileImage": "/avatars/ishita-rao.svg"},
 ]
 for e in EMPLOYEES:
     db.employees.insert_one(e)

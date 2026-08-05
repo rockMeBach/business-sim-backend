@@ -6,6 +6,11 @@ const PlayerProductCategorySchema = new mongoose.Schema({
   simulationId: mongoose.Schema.Types.ObjectId,
   roundNumber: Number,
 
+  // One shared warehouse across every category (previously stored per
+  // category inside the array below). The scoring engine pools total units
+  // sold across all categories against this single cap.
+  warehouseCapacity: Number,
+
   categories: [
     {
       categoryId: {

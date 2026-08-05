@@ -1,7 +1,7 @@
 const ProductCategory = require("../models/ProductCategory");
 const PlayerProductCategory = require("../models/PlayerProductCategory");
 const PlayerStepOne = require("../models/PlayerStepOne");
-
+const { withBasePrice } = require("../utils/basePrice");
 
 exports.getAllCategories = async (req, res) => {
   try {
@@ -14,8 +14,13 @@ exports.getAllCategories = async (req, res) => {
       : { isActive: true, isCustom: { $ne: true } };
 
     const categories = await ProductCategory.find(filter);
-    res.json(categories);
+
+    // basePrice is derived, not stored — surfaced here so the Product
+    // Categories and Pricing pages can both show it without each
+    // re-implementing the quality-tier lookup.
+    res.json(await withBasePrice(categories));
   } catch (error) {
+    console.error("GET CATEGORIES ERROR:", error);
     res.status(500).json({ message: "Failed to fetch categories" });
   }
 };
@@ -84,7 +89,7 @@ exports.deleteCustomCategory = async (req, res) => {
 
 exports.saveStepTwo = async (req, res) => {
   try {
-    const { userId, simulationId, roundNumber, categories } = req.body;
+    const { userId, simulationId, roundNumber, categories, warehouseCapacity } = req.body;
 
     if (!userId || !simulationId || !roundNumber || !Array.isArray(categories)) {
       return res.status(400).json({
@@ -107,14 +112,19 @@ exports.saveStepTwo = async (req, res) => {
         categoryId: c.categoryId,
         enabled: c.enabled,
         baseCost: category.baseCost,
-        pricingTiers: category.pricingTiers,
-        warehouseCapacity: c.warehouseCapacity
+        pricingTiers: category.pricingTiers
       });
     }
 
+    // One warehouse serves every category, so capacity is a single
+    // document-level figure now rather than a per-category one. The scoring
+    // engine pools actualSold across all categories against it.
     const saved = await PlayerProductCategory.findOneAndUpdate(
       { userId, simulationId, roundNumber },
-      { categories: enrichedCategories },
+      {
+        categories: enrichedCategories,
+        warehouseCapacity: warehouseCapacity ?? null
+      },
       { upsert: true, new: true }
     );
 

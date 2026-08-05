@@ -97,8 +97,10 @@ const SEGMENTS = ["premium", "standard", "basic", "discount"];
 // pre-intensity) compares every enrolled player's raw weighted score for one
 // category+segment. PlayerRoundResult.segments[segment].localScore is that
 // same value (utils/scoringEngine/combine.js's segmentScore), so this just
-// gathers it across every player in the group+round and anonymizes it —
-// matching the frontend's existing "Competitor names hidden" messaging.
+// gathers it across every player in the group+round. Competitors are named
+// outright (same as getLeaderboard) — the scoreboard is public within a
+// cohort, so the old "Team A/B/C" anonymization only obscured who you were
+// actually up against.
 exports.getCompetitiveLandscape = async (req, res) => {
   try {
     const { simulationId, groupId, roundNumber, categoryId, segment, userId } = req.query;
@@ -121,8 +123,11 @@ exports.getCompetitiveLandscape = async (req, res) => {
       .filter(Boolean)
       .sort((a, b) => b.score - a.score);
 
-    const competitors = entries.map((e, i) => ({
-      name: e.userId === String(userId) ? "You" : `Team ${String.fromCharCode(65 + i)}`,
+    const users = await User.find({ _id: { $in: entries.map((e) => e.userId) } }).select("_id username");
+    const usernameById = new Map(users.map((u) => [String(u._id), u.username]));
+
+    const competitors = entries.map((e) => ({
+      name: usernameById.get(e.userId) || "Unknown player",
       score: e.score,
       isYou: e.userId === String(userId)
     }));

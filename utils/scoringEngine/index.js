@@ -19,7 +19,7 @@ const { computeQualityPricing } = require("./qualityPricing");
 const { computeSigmoidNew, computeHeightPricePoints, computeSegmentQualification } = require("./heightPriceGate");
 const { average, sampleStdev, minMax } = require("./groupStats");
 const { combinePlayerSegmentScores } = require("./combine");
-const { computeMarketShareResult } = require("./marketShare");
+const { computeMarketShareResult, applyPooledWarehouseCapacity } = require("./marketShare");
 const { computeFulfillmentRate } = require("./supplierFulfillment");
 const { SEGMENTS } = require("./segments");
 
@@ -207,10 +207,6 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
     const enrolledScores = enrolledIndexes.map((i) => perPlayerSegmentScores[i]);
 
     enrolledIndexes.forEach((playerIndex, poolIndex) => {
-      const playerCategoryEntry = decisions[playerIndex].productCategory?.categories?.find(
-        (c) => String(c.categoryId) === String(category._id)
-      );
-
       const marketShareBySegment = computeMarketShareResult({
         allPlayersSegmentScores: enrolledScores,
         thisPlayerIndex: poolIndex,
@@ -218,16 +214,13 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
         localCompetitionIntensityPercent: intensity,
         qualityPricing: basics[playerIndex].qualityPricing,
         unitCostBasis: basics[playerIndex].unitCostBasis,
-        fulfillmentRate: basics[playerIndex].fulfillmentRate,
-        warehouseCapacity: playerCategoryEntry?.warehouseCapacity
+        fulfillmentRate: basics[playerIndex].fulfillmentRate
       });
 
       const segments = {};
-      let categoryRevenue = 0, categoryCogs = 0, categoryGrossProfit = 0;
       for (const segment of SEGMENTS) {
-        const m = marketShareBySegment[segment];
         segments[segment] = {
-          ...m,
+          ...marketShareBySegment[segment],
           finalMultiplier: perPlayerCombined[playerIndex].finalMultiplier[segment],
           localScore: perPlayerSegmentScores[playerIndex][segment],
           qualifies: basics[playerIndex].segmentQualification[segment],
@@ -235,9 +228,6 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
           breakdown: perPlayerCombined[playerIndex].breakdownBySegment[segment],
           multipliers: perPlayerCombined[playerIndex].multiplierBySegment[segment]
         };
-        categoryRevenue += m.expectedRevenue;
-        categoryCogs += m.cogs;
-        categoryGrossProfit += m.grossProfit;
       }
 
       results[playerIndex].perCategory.push({
@@ -245,11 +235,24 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
         categoryName: category.name,
         segments
       });
-      results[playerIndex].totalRevenue += categoryRevenue;
-      results[playerIndex].totalCogs += categoryCogs;
-      results[playerIndex].totalGrossProfit += categoryGrossProfit;
     });
   }
+
+  // Warehouse capacity is one shared cap across every category, so it can
+  // only be applied now that each player's full category set is known —
+  // which is also why the revenue/COGS totals are summed here rather than
+  // accumulated inside the per-category loop above.
+  results.forEach((r, playerIndex) => {
+    const totals = applyPooledWarehouseCapacity({
+      perCategory: r.perCategory,
+      warehouseCapacity: decisions[playerIndex].productCategory?.warehouseCapacity,
+      qualityPricing: basics[playerIndex].qualityPricing,
+      unitCostBasis: basics[playerIndex].unitCostBasis
+    });
+    r.totalRevenue = totals.totalRevenue;
+    r.totalCogs = totals.totalCogs;
+    r.totalGrossProfit = totals.totalGrossProfit;
+  });
 
   results.forEach((r, playerIndex) => {
     const { riderCost, fleetCost, techCost, marketingCost, hrCost } = r.costBreakdown;
