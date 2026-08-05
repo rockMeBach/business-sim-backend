@@ -30,6 +30,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+# One website-budget slider unit in rupees; mirrors utils/websiteBudget.js.
+WEBSITE_BUDGET_UNIT = 100000
+
 SIM_NAME = "QuickCommerce Round 1"
 SEGMENTS = ["premium", "standard", "basic", "discount"]
 SEGMENT_LABELS = {"premium": "Premium", "standard": "Standard", "basic": "Basic", "discount": "Discount"}
@@ -257,7 +260,15 @@ def main():
         b.line(label,
                per_player(lambda uid, g=group_key, k=key: flag((step_five.get(uid, {}).get(g) or {}).get(k))),
                context=(conf.get("appliesTo"), conf.get("multiplier"), conf.get("cost")))
-    b.line("Website Budget (L)", per_player(lambda uid: step_five.get(uid, {}).get("websiteBudget")))
+    # Slider value in lakhs, plus what that actually costs in rupees. The Cost
+    # column was blank here because this row has no config cost — the spend is
+    # derived from the player's own slider (1 unit = ₹1,00,000).
+    b.line("Website Budget (L)",
+           per_player(lambda uid: step_five.get(uid, {}).get("websiteBudget")),
+           context=("Slider", None, WEBSITE_BUDGET_UNIT))
+    b.line("Website Budget cost",
+           per_player(lambda uid: (step_five.get(uid, {}).get("websiteBudget") or 0) * WEBSITE_BUDGET_UNIT),
+           number_format=MONEY, indent=1)
     b.line("Technology Cost / month",
            per_player(lambda uid: step_five.get(uid, {}).get("totalTechnologyCost")),
            number_format=MONEY, bold=True)
@@ -367,13 +378,70 @@ def main():
     played = [c for c in categories
               if any(seg_of(p["id"], c["_id"], "premium") for p in players)]
 
+    def any_segment(cat_id, getter):
+        """First non-empty value across players/segments, for reading labels."""
+        for p in players:
+            for s in SEGMENTS:
+                got = getter(seg_of(p["id"], cat_id, s))
+                if got:
+                    return got
+        return []
+
     for cat in played:
         b.step(f'RESULTS — {cat["name"]}')
+
+        # --- Base points: one row per key indicator, with the per-segment
+        # elasticity weights in columns B-E, mirroring the workbook's
+        # "Base Points Elastic" block. Achieved points are reported ungated
+        # (the raw score before segment qualification zeroes it out).
+        indicators = [row.get("keyIndicator") for row in any_segment(cat["_id"], lambda s: s.get("breakdown"))]
+        if indicators:
+            b.block("Base Points Elasticity")
+            b.header("Key Indicator", ("Premium", "Standard", "Basic", "Discount"), player_header=False)
+            for idx, name in enumerate(indicators):
+                weights = []
+                for s in SEGMENTS:
+                    rows = any_segment(cat["_id"], lambda x: x.get("breakdown"))
+                    src = seg_of(players[0]["id"], cat["_id"], s).get("breakdown") or rows
+                    weights.append(src[idx].get("multiplier") if idx < len(src) else None)
+
+                def achieved(uid, i=idx):
+                    best = 0
+                    for s in SEGMENTS:
+                        rows = seg_of(uid, cat["_id"], s).get("breakdown") or []
+                        if i < len(rows):
+                            best = max(best, rows[i].get("achievedPoints") or 0)
+                    return best
+
+                b.line(name, per_player(achieved), context=tuple(weights),
+                       number_format=DEC2, indent=1)
+
+        # --- The five decision multipliers. Identical across segments (the
+        # workbook applies one scalar per player), so one row each.
+        mult_names = [m.get("title") for m in any_segment(cat["_id"], lambda s: s.get("multipliers"))]
+        if mult_names:
+            b.block("Multipliers on Core Score")
+            for idx, name in enumerate(mult_names):
+                def mult(uid, i=idx):
+                    for s in SEGMENTS:
+                        rows = seg_of(uid, cat["_id"], s).get("multipliers") or []
+                        if i < len(rows):
+                            return rows[i].get("value")
+                    return None
+                b.line(name, per_player(mult), number_format="0.0000", indent=1)
+
+        b.block("Qualifies for segment")
+        for segment in SEGMENTS:
+            b.line(SEGMENT_LABELS[segment],
+                   per_player(lambda uid, c=cat, s=segment:
+                              "Yes" if seg_of(uid, c["_id"], s).get("qualifies") else "No"),
+                   indent=1)
 
         for title, field, fmt in [
             ("BASE (Core Score)", "coreScore", DEC2),
             ("Final MULTIPLIER", "finalMultiplier", DEC2),
             ("Local Score", "localScore", DEC2),
+            ("Total Market Size", "totalMarketSize", MONEY),
             ("Market Share", "marketShare", "0.0000"),
             ("Expected Sale", "expectedSale", MONEY),
             ("Actual Sold", "actualSold", MONEY),

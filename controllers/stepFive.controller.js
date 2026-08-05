@@ -1,5 +1,6 @@
 const TechnologyConfig = require("../models/TechnologyConfig");
 const PlayerStepFive = require("../models/PlayerStepFive");
+const { websiteBudgetToRupees } = require("../utils/websiteBudget");
 
 /* =========================================================
    CALCULATE STEP FIVE
@@ -14,7 +15,7 @@ exports.calculateStepFive = async (req, res) => {
       return res.status(404).json({ message: "Technology config not found" });
     }
 
-    const { customerFacing = {}, operations = {} } = req.body;
+    const { customerFacing = {}, operations = {}, websiteBudget = 0 } = req.body;
 
     const breakdown = {
       customerFacing: {},
@@ -119,9 +120,14 @@ exports.calculateStepFive = async (req, res) => {
       kpis.operations.decisionQuality += 15;
     }
 
+    // The website budget is a real committed spend, so it belongs in the
+    // total. It used to be excluded here and added only for display on the
+    // client, which meant the P&L never charged it.
+    totalTechnologyCost += websiteBudgetToRupees(websiteBudget);
+
     return res.json({
-      technologyBreakdown: breakdown,   // 🔥 cost & multiplier separate
-      totalTechnologyCost,               // 🔥 base cost sum only
+      technologyBreakdown: breakdown,
+      totalTechnologyCost,
       kpis
     });
 
@@ -248,6 +254,10 @@ exports.saveStepFive = async (req, res) => {
       totalTechnologyCost += item.cost;
       kpis.operations.decisionQuality += 15;
     }
+
+    // Same as the calculate path: the website budget is charged, not just
+    // displayed. The scoring engine reads this stored totalTechnologyCost.
+    totalTechnologyCost += websiteBudgetToRupees(websiteBudget);
 
     /* ===== SAVE SNAPSHOT ===== */
     const saved = await PlayerStepFive.findOneAndUpdate(

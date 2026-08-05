@@ -1,4 +1,5 @@
 const { forEachSegment } = require("./segments");
+const { WEBSITE_BUDGET_UNIT } = require("../websiteBudget");
 
 // Boolean-flag options (Excel rows 24-30). websiteDevelopment (row 31) is
 // handled separately as a slider.
@@ -41,12 +42,21 @@ function computeTechnologyOptionsMultiplier(technologyConfig, stepFiveDoc) {
     }
   }
 
-  // websiteDevelopment (row 31): slider, units stored directly as a number.
-  const websiteUnits = Number(customerFacingSelected.websiteDevelopment) || 0;
+  // Website development (row 31) is a budget slider, not a checkbox.
+  //
+  // This used to read `customerFacing.websiteDevelopment` expecting a unit
+  // count, but the client sends that field as a BOOLEAN and puts the slider
+  // value in `websiteBudget`. Number(false) is 0, so the website multiplier
+  // never applied for anyone — the budget was inert in scoring even though
+  // the UI presented it as a real investment.
+  //
+  // `websiteBudget` is denominated in LAKHS, matching the slider's own
+  // "₹0 L – ₹100 L" labels.
+  const websiteBudgetLakhs = Number(stepFiveDoc.websiteBudget) || 0;
   const websiteConfig = technologyConfig.customerFacing?.websiteDevelopment;
-  if (websiteUnits > 0 && websiteConfig?.sliderConfig) {
+  if (websiteBudgetLakhs > 0 && websiteConfig?.sliderConfig) {
     const { rate, divisor } = websiteConfig.sliderConfig;
-    const spend = websiteUnits * (websiteConfig.cost || 0);
+    const spend = websiteBudgetLakhs * WEBSITE_BUDGET_UNIT;
     if (divisor) {
       product *= 1 + (spend * rate) / divisor;
     }
