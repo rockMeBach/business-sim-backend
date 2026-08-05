@@ -16,7 +16,8 @@ function computeFulfillmentRate(supplierReliabilityConfig, supplier) {
   // assume full fulfillment rather than silently zeroing out revenue.
   const steadyStateRate = band?.fulfillmentRate ?? 1;
 
-  const weeksPerRound = supplierReliabilityConfig?.weeksPerRound || 8;
+  // One round = one month; keep this fallback in step with the config default.
+  const weeksPerRound = supplierReliabilityConfig?.weeksPerRound || 4;
   const deliveryTimeWeeks = supplier?.deliveryTimeWeeks || 0;
   const rampFraction = Math.min(deliveryTimeWeeks / weeksPerRound, 1);
   const rampUpRate = supplierReliabilityConfig?.rampUpFulfillmentRate ?? steadyStateRate;

@@ -141,7 +141,8 @@ exports.saveStepFive = async (req, res) => {
       simulationId,
       roundNumber,
       customerFacing = {},
-      operations = {}
+      operations = {},
+      websiteBudget = 0
     } = req.body;
 
     if (!userId || !simulationId || !roundNumber) {
@@ -254,6 +255,9 @@ exports.saveStepFive = async (req, res) => {
       {
         customerFacing,
         operations,
+        // The client has always sent this, but it wasn't in the schema, so
+        // Mongoose silently dropped it and the slider reset on every reload.
+        websiteBudget,
         technologyBreakdown: breakdown,
         totalTechnologyCost,
         kpis

@@ -211,10 +211,13 @@ def main():
     autosize(ws)
 
     # ---------------- Pricing ----------------
+    # No "Monthly Revenue" column: that field was dead and self-inconsistent,
+    # and has been dropped. Actual revenue is per category+segment on the
+    # Segment Results sheet.
     ws = sheet(wb, "Pricing Decisions", [
         "Player", "Round", "Category", "Base Monthly Demand",
         "Quality Level", "Quality Multiplier", "Quality Price",
-        "Margin Multiplier", "Final Selling Price", "Monthly Revenue",
+        "Margin Multiplier", "Final Selling Price",
         "R&D Investment", "Selected Features",
     ])
     for p in pricing:
@@ -225,10 +228,10 @@ def main():
                 c.get("name") or cat_name.get(str(c.get("categoryId"))),
                 c.get("baseMonthlyDemand"), c.get("qualityLevel"), c.get("qualityMultiplier"),
                 c.get("qualityPrice"), c.get("marginMultiplier"),
-                c.get("finalSellingPrice"), c.get("monthlyRevenue"),
+                c.get("finalSellingPrice"),
                 p.get("rdInvestment"), ", ".join(p.get("selectedFeatures") or []),
             ])
-    fmt_cols(ws, [4, 7, 9, 10, 11], MONEY)
+    fmt_cols(ws, [4, 7, 9, 10], MONEY)
     fmt_cols(ws, [6, 8], DEC)
     autosize(ws)
 

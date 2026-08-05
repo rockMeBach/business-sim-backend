@@ -26,7 +26,13 @@ const supplierReliabilityConfigSchema = new mongoose.Schema({
   // weeksPerRound) spent waiting on the first delivery sells at
   // rampUpFulfillmentRate instead of the steady-state reliability rate,
   // approximating the sheet's demonstrated stockout dynamic.
-  weeksPerRound: { type: Number, required: true, default: 8 },
+  //
+  // ONE ROUND IS ONE MONTH — this is the only place a round's length is
+  // quantified, and it must agree with the rest of the engine, which consumes
+  // ProductCategory.baseMonthlyDemand and subtracts the steps' totalMonthlyCost
+  // once per round. It previously read 8 (i.e. ~2 months), which understated
+  // every supplier's fulfillment ramp by half.
+  weeksPerRound: { type: Number, required: true, default: 4 },
   // Sheet's own weeks 1-4 example: demand 600/wk (2400 total), actually sold
   // 0+425+440+450=1315 -> 1315/2400 ~= 0.55.
   rampUpFulfillmentRate: { type: Number, required: true, default: 0.55 }

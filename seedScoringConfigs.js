@@ -55,7 +55,7 @@ function sampleStdev(values) {
         { minStars: 3.25, maxStars: 3.75, fulfillmentRate: 0.825 },  // 3.5* -> 80-85% (extrapolated)
         { minStars: 0, maxStars: 3.25, fulfillmentRate: 0.775 }      // <=3* -> 75-80% (extrapolated)
       ],
-      weeksPerRound: 8,
+      weeksPerRound: 4, // one round = one month, matching the engine's monthly demand/costs
       rampUpFulfillmentRate: 0.55
     }, { upsert: true });
 

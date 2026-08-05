@@ -20,6 +20,11 @@ const playerStepNineSchema = new mongoose.Schema({
   deliveryStaff: Object,
   corporateTeam: Object,
 
+  // Which specific employees the player hired. corporateTeam only keeps
+  // headcounts per bucket, which is lossy — the exact roster couldn't be
+  // restored from it, so the HR screen came back empty after a refresh.
+  selectedEmployees: [String],
+
   educationBudgetPerRider: { type: Number, default: 0 },
   riderBonusBudget: { type: Number, default: 0 },
 

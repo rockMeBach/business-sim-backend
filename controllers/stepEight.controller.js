@@ -1,12 +1,51 @@
 const MarketingConfig = require("../models/MarketingConfig");
 const PlayerStepEight = require("../models/PlayerStepEight");
 
+/**
+ * Every marketing channel, keyed by the SAME name the config and the frontend
+ * use. This replaced a hand-written if-block per channel, which had drifted
+ * into two bugs:
+ *
+ *   1. Four blocks tested names that exist nowhere else — cashbackCoupons,
+ *      emailSms, corporateTieups, housingComplexes — while the config and the
+ *      client send cashbackOption, emailAndSMS, corporateTieUps and
+ *      housingSociety. Those four channels could never match, so enabling them
+ *      recorded no cost and no breakdown entry at all.
+ *   2. Cost was only ever read off the request payload (.budget/.cost/
+ *      .costPerUser). Checkbox channels carry no such field, so they resolved
+ *      to Number(undefined || 0) === 0, and firstOrderDiscount /
+ *      creditCardOffers were hardcoded to 0 outright — silently zeroing real
+ *      six-figure spend.
+ *
+ * `budgetFrom` marks the slider channels, where the player picks the spend;
+ * everything else is charged its flat config cost.
+ */
+const CHANNELS = [
+  // group          key                    budgetFrom   kpi            boost
+  ["acquisition",  "googleAds",           "budget",    "acquisition", "conversionBoost"],
+  ["acquisition",  "facebookAds",         "budget",    "acquisition", "conversionBoost"],
+  ["acquisition",  "referralProgram",     null,        "acquisition", "conversionBoost"],
+  ["acquisition",  "firstOrderDiscount",  null,        "acquisition", "conversionBoost"],
+  ["acquisition",  "influencerMarketing", null,        "brandTrust",  "revenueBoost"],
+  ["retention",    "cashbackOption",      null,        "retention",   "retentionBoost"],
+  ["retention",    "loyaltyProgram",      null,        "retention",   "retentionBoost"],
+  ["retention",    "pushNotifications",   null,        "retention",   "retentionBoost"],
+  ["retention",    "emailAndSMS",         null,        "retention",   "conversionBoost"],
+  ["partnerships", "creditCardOffers",    null,        "revenue",     "revenueBoost"],
+  ["partnerships", "corporateTieUps",     null,        "revenue",     "revenueBoost"],
+  ["partnerships", "housingSociety",      null,        "revenue",     "revenueBoost"]
+].map(([group, key, budgetFrom, kpi, boost]) => ({ group, key, budgetFrom, kpi, boost }));
+
 /* ================= PURE CALCULATION ================= */
 async function calculateMarketing(marketing) {
   const config = await MarketingConfig.findOne();
   if (!config) throw new Error("Config not found");
 
-  const { acquisition = {}, retention = {}, partnerships = {} } = marketing;
+  const groups = {
+    acquisition: marketing.acquisition || {},
+    retention: marketing.retention || {},
+    partnerships: marketing.partnerships || {}
+  };
 
   let totalCost = 0;
 
@@ -17,178 +56,36 @@ async function calculateMarketing(marketing) {
     brandTrust: 0
   };
 
-  // 🔥 cost + segment multipliers (DISPLAY ONLY)
+  // Cost + segment multipliers, surfaced for display.
   const breakdown = {
     acquisition: {},
     retention: {},
     partnerships: {}
   };
 
-  /* ================= ACQUISITION ================= */
+  for (const { group, key, budgetFrom, kpi, boost } of CHANNELS) {
+    const selection = groups[group][key];
+    if (!selection?.enabled) continue;
 
-  if (acquisition.googleAds?.enabled) {
-    const cost = Number(acquisition.googleAds.budget || 0);
+    const channelConfig = config.marketing?.[key] || {};
+
+    // Slider channels are charged what the player set; the rest are charged
+    // the config's flat cost for that channel.
+    const cost = budgetFrom
+      ? Number(selection[budgetFrom] ?? channelConfig.cost ?? 0)
+      : Number(channelConfig.cost ?? 0);
+
     totalCost += cost;
 
-    breakdown.acquisition.googleAds = {
+    breakdown[group][key] = {
       cost,
-      multiplierBySegment:
-        config.marketing?.googleAds?.multiplierBySegment || defaultSegments()
+      multiplierBySegment: channelConfig.multiplierBySegment || defaultSegments()
     };
 
-    kpis.acquisition +=
-      (cost / 100000) *
-      (config.acquisition?.googleAds?.conversionBoost || 0);
-  }
-
-  if (acquisition.facebookAds?.enabled) {
-    const cost = Number(acquisition.facebookAds.budget || 0);
-    totalCost += cost;
-
-    breakdown.acquisition.facebookAds = {
-      cost,
-      multiplierBySegment:
-        config.marketing?.facebookAds?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.acquisition +=
-      (cost / 100000) *
-      (config.acquisition?.facebookAds?.conversionBoost || 0);
-  }
-
-  if (acquisition.referralProgram?.enabled) {
-    const cost = Number(acquisition.referralProgram.costPerUser || 0);
-    totalCost += cost;
-
-    breakdown.acquisition.referralProgram = {
-      cost,
-      multiplierBySegment:
-        config.marketing?.referralProgram?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.acquisition +=
-      config.acquisition?.referralProgram?.conversionBoost || 0;
-  }
-
-  if (acquisition.firstOrderDiscount?.enabled) {
-    breakdown.acquisition.firstOrderDiscount = {
-      cost: 0,
-      multiplierBySegment:
-        config.marketing?.firstOrderDiscount?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.acquisition +=
-      config.acquisition?.firstOrderDiscount?.conversionBoost || 0;
-  }
-
-  if (acquisition.influencerMarketing?.enabled) {
-    const cost = Number(acquisition.influencerMarketing.budget || 0);
-    totalCost += cost;
-
-    breakdown.acquisition.influencerMarketing = {
-      cost,
-      multiplierBySegment:
-        config.marketing?.influencerMarketing?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.brandTrust +=
-      config.acquisition?.influencerMarketing?.revenueBoost || 0;
-  }
-
-  /* ================= RETENTION ================= */
-
-  if (retention.cashbackCoupons?.enabled) {
-    const cost = Number(retention.cashbackCoupons.cost || 0);
-    totalCost += cost;
-
-    breakdown.retention.cashbackCoupons = {
-      cost,
-      multiplierBySegment:
-        config.marketing?.cashbackOption?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.retention +=
-      config.retention?.cashbackCoupons?.retentionBoost || 0;
-  }
-
-  if (retention.loyaltyProgram?.enabled) {
-    const cost = Number(retention.loyaltyProgram.cost || 0);
-    totalCost += cost;
-
-    breakdown.retention.loyaltyProgram = {
-      cost,
-      multiplierBySegment:
-        config.marketing?.loyaltyProgram?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.retention +=
-      config.retention?.loyaltyProgram?.retentionBoost || 0;
-  }
-
-  if (retention.pushNotifications?.enabled) {
-    const cost = Number(retention.pushNotifications.cost || 0);
-    totalCost += cost;
-
-    breakdown.retention.pushNotifications = {
-      cost,
-      multiplierBySegment:
-        config.marketing?.pushNotifications?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.retention +=
-      config.retention?.pushNotifications?.retentionBoost || 0;
-  }
-
-  if (retention.emailSms?.enabled) {
-    const cost = Number(retention.emailSms.budget || 0);
-    totalCost += cost;
-
-    breakdown.retention.emailSms = {
-      cost,
-      multiplierBySegment:
-        config.marketing?.emailAndSMS?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.retention +=
-      config.retention?.emailSms?.conversionBoost || 0;
-  }
-
-  /* ================= PARTNERSHIPS ================= */
-
-  if (partnerships.creditCardOffers?.enabled) {
-    breakdown.partnerships.creditCardOffers = {
-      cost: 0,
-      multiplierBySegment:
-        config.marketing?.creditCardOffers?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.revenue +=
-      config.partnerships?.creditCardOffers?.revenueBoost || 0;
-  }
-
-  if (partnerships.corporateTieups?.enabled) {
-    breakdown.partnerships.corporateTieups = {
-      cost: 0,
-      multiplierBySegment:
-        config.marketing?.corporateTieUps?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.revenue +=
-      config.partnerships?.corporateTieups?.revenueBoost || 0;
-  }
-
-  if (partnerships.housingComplexes?.enabled) {
-    const cost = Number(partnerships.housingComplexes.cost || 0);
-    totalCost += cost;
-
-    breakdown.partnerships.housingComplexes = {
-      cost,
-      multiplierBySegment:
-        config.marketing?.housingSociety?.multiplierBySegment || defaultSegments()
-    };
-
-    kpis.revenue +=
-      config.partnerships?.housingComplexes?.revenueBoost || 0;
+    const boostValue = config[group]?.[key]?.[boost] || 0;
+    // Paid-ad reach scales with spend (per ₹1 lakh); flat channels contribute
+    // their boost once.
+    kpis[kpi] += budgetFrom ? (cost / 100000) * boostValue : boostValue;
   }
 
   return { totalCost, kpis, breakdown };
@@ -210,16 +107,17 @@ exports.saveStepEight = async (req, res) => {
     const { userId, simulationId, roundNumber, ...marketing } = req.body;
 
     const result = await calculateMarketing(marketing);
-const saved = await PlayerStepEight.findOneAndUpdate(
-  { userId, simulationId, roundNumber },
-  {
-    marketing,
-    totalCost: result.totalCost,
-    kpis: result.kpis,
-    breakdown: result.breakdown   // 🔥 ADD THIS
-  },
-  { upsert: true, new: true }
-);
+
+    const saved = await PlayerStepEight.findOneAndUpdate(
+      { userId, simulationId, roundNumber },
+      {
+        marketing,
+        totalCost: result.totalCost,
+        kpis: result.kpis,
+        breakdown: result.breakdown
+      },
+      { upsert: true, new: true }
+    );
 
     res.json({
       message: "STEP-8 saved successfully",

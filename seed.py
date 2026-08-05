@@ -700,7 +700,9 @@ for i, uid in enumerate(user_ids):
             "qualityPrice":    q_price,
             "marginMultiplier":SP_MULTIPLIER[i],
             "finalSellingPrice": sp_final,
-            "monthlyRevenue":  sp_final * demand * 0.15,   # rough share estimate
+            # monthlyRevenue dropped — it was a "rough share estimate" nothing
+            # ever read, and it disagreed with the row it sat in. Revenue is
+            # computed per segment by the scoring engine.
         })
 
     db.pricingdecisions.insert_one({

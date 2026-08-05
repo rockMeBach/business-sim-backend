@@ -20,6 +20,11 @@ const PlayerStepFiveSchema = new mongoose.Schema({
   customerFacing: Object,
   operations: Object,
 
+  // Website development spend, entered in lakhs on the slider. The client
+  // always POSTed this; without a schema entry Mongoose discarded it, so the
+  // slider silently reset to 0 on every reload.
+  websiteBudget: { type: Number, default: 0 },
+
   // 🔥 calculated data (explicit)
   technologyBreakdown: {
     customerFacing: Object,
