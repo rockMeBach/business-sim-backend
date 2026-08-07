@@ -64,8 +64,37 @@ const playerRoundResultSchema = new mongoose.Schema({
     fleetCost: Number,
     techCost: Number,
     marketingCost: Number,
-    hrCost: Number
+    hrCost: Number,
+    // Orders the own fleet couldn't carry, billed per order by the third
+    // party. Computed by the weekly cycle, not by Step 4 — only the engine
+    // knows how much demand a player actually won.
+    thirdPartyDeliveryCost: Number
   },
+
+  // Warehouse stock at the start/end of the round. Rounds are consecutive
+  // months, so what isn't sold is still there next round.
+  openingInventory: Number,
+  closingInventory: Number,
+  thirdPartyOrders: Number,
+
+  // The week-by-week run inside this round: demand, what the supplier
+  // delivered, what fitted in the warehouse, what shipped and on whose bikes.
+  weeklyFulfillment: [
+    {
+      week: Number,
+      demand: Number,
+      warehouseCapacity: Number,
+      riderCapacity: Number,
+      supplyRate: Number,
+      received: Number,
+      refusedForSpace: Number,
+      sold: Number,
+      ownFleetDelivered: Number,
+      thirdPartyDelivered: Number,
+      unmetDemand: Number,
+      closingInventory: Number
+    }
+  ],
 
   score: Number, // single number surfaced to the frontend
   rank: Number,  // rank within this group+round

@@ -1,7 +1,6 @@
 /**
- * The website development budget is entered on a 0-100 slider denominated in
- * LAKHS — the control labels its ends "₹0 L" and "₹100 L" — so one slider unit
- * is ₹1,00,000.
+ * The website development budget is entered on a slider whose every notch adds
+ * ₹35,000 of spend.
  *
  * Kept in one place because three call sites need to agree on it, and they
  * previously didn't: the step-five controller excluded the budget from
@@ -10,11 +9,11 @@
  * for display. Players were shown a spend they were never charged and which
  * bought them nothing.
  */
-const WEBSITE_BUDGET_UNIT = 100000;
+const WEBSITE_BUDGET_UNIT = 35000;
 
-/** Slider value (lakhs) -> rupees. */
-function websiteBudgetToRupees(budgetInLakhs) {
-  return (Number(budgetInLakhs) || 0) * WEBSITE_BUDGET_UNIT;
+/** Slider value (notches) -> rupees. */
+function websiteBudgetToRupees(budgetUnits) {
+  return (Number(budgetUnits) || 0) * WEBSITE_BUDGET_UNIT;
 }
 
 module.exports = { WEBSITE_BUDGET_UNIT, websiteBudgetToRupees };

@@ -26,7 +26,15 @@ const playerStepNineSchema = new mongoose.Schema({
   selectedEmployees: [String],
 
   educationBudgetPerRider: { type: Number, default: 0 },
-  riderBonusBudget: { type: Number, default: 0 },
+
+  // Percentage of monthly salary (0-20), NOT a rupee amount. Was
+  // `riderBonusBudget` in rupees, which the scoring engine then had to divide
+  // by ridersPerCity * riderCostPerMonth to recover the percentage its bands
+  // are defined on. Storing what's actually banded removes that round-trip.
+  riderBonusPercent: { type: Number, default: 0 },
+  // Rupee cost of that percentage, so the HR total doesn't have to re-derive
+  // it from a payroll the engine can't see.
+  totalBonusCost: { type: Number, default: 0 },
 
   totalMonthlyCost: {
     type: Number,

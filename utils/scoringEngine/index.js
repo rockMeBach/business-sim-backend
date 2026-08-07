@@ -8,6 +8,8 @@ const PricingConfig = require("../../models/PricingConfig");
 const LocalCompetitionConfig = require("../../models/LocalCompetitionConfig");
 const ScoringConstantsConfig = require("../../models/ScoringConstantsConfig");
 const SupplierReliabilityConfig = require("../../models/SupplierReliabilityConfig");
+const MarketPositionOption = require("../../models/MarketPositionOption");
+const PlayerRoundResult = require("../../models/PlayerRoundResult");
 
 const { fetchGroupRoundDecisions } = require("./fetchDecisions");
 const { computeDeliveryStepMultiplier } = require("./deliveryMultiplier");
@@ -17,10 +19,11 @@ const { computeCorporateTeamSpend, computeHROpsStepMultiplier } = require("./hrO
 const { computeCompetitiveAverageMultiplier } = require("./competitiveAverage");
 const { computeQualityPricing } = require("./qualityPricing");
 const { computeSigmoidNew, computeHeightPricePoints, computeSegmentQualification } = require("./heightPriceGate");
+const { computePositioningQualification } = require("./positioningGate");
 const { average, sampleStdev, minMax } = require("./groupStats");
 const { combinePlayerSegmentScores } = require("./combine");
-const { computeMarketShareResult, applyPooledWarehouseCapacity } = require("./marketShare");
-const { computeFulfillmentRate } = require("./supplierFulfillment");
+const { computeMarketShareResult } = require("./marketShare");
+const { runWeeklyFulfillment } = require("./weeklyFulfillment");
 const { SEGMENTS } = require("./segments");
 
 function firstCategoryPricingDecision(playerDecisions) {
@@ -38,7 +41,8 @@ async function loadConfigs() {
     localCompetitionConfig,
     scoringConstantsConfig,
     supplierReliabilityConfig,
-    categories
+    categories,
+    marketPositionOptions
   ] = await Promise.all([
     DeliveryConfig.findOne(),
     TechnologyConfig.findOne(),
@@ -49,13 +53,15 @@ async function loadConfigs() {
     LocalCompetitionConfig.findOne(),
     ScoringConstantsConfig.findOne(),
     SupplierReliabilityConfig.findOne(),
-    ProductCategory.find({ isActive: true })
+    ProductCategory.find({ isActive: true }),
+    MarketPositionOption.find({})
   ]);
 
   return {
     deliveryConfig, technologyConfig, marketingConfig,
     hrOpsMultiplierConfig, operationsStaffingConfig, pricingConfig,
-    localCompetitionConfig, scoringConstantsConfig, supplierReliabilityConfig, categories
+    localCompetitionConfig, scoringConstantsConfig, supplierReliabilityConfig, categories,
+    marketPositionOptions
   };
 }
 
@@ -79,7 +85,14 @@ function computePerPlayerBasics(playerDecisions, configs) {
   const qualityPricing = computeQualityPricing(configs.pricingConfig, qualityLevel, spMult);
   const sigmoidNew = computeSigmoidNew(configs.scoringConstantsConfig, qualityPricing.spMultBase);
   const heightPricePoints = computeHeightPricePoints(sigmoidNew);
-  const segmentQualification = computeSegmentQualification(configs.scoringConstantsConfig, sigmoidNew);
+  // Where the player competes is their Step 1 positioning choice. The
+  // height-price band is kept only as a fallback for rounds saved before
+  // positioning was recorded; sigmoidNew still feeds heightPricePoints above,
+  // so pricing continues to affect HOW WELL they score in those segments.
+  const heightPriceQualification = computeSegmentQualification(configs.scoringConstantsConfig, sigmoidNew);
+  const segmentQualification = computePositioningQualification(
+    playerDecisions.stepOne, configs.marketPositionOptions, heightPriceQualification
+  );
 
   const corporateSpend = computeCorporateTeamSpend(configs.operationsStaffingConfig, playerDecisions.stepNine);
   const techCost = playerDecisions.stepFive?.totalTechnologyCost || 0;
@@ -99,13 +112,38 @@ function computePerPlayerBasics(playerDecisions, configs) {
     (constants?.focusMultiplier ?? 1) * (constants?.newPlayerInSegmentMultiplier ?? 1) * rdMultiplier;
 
   const unitCostBasis = playerDecisions.supplier?.costPerUnit ?? configs.pricingConfig?.baseUnitPrice;
-  const fulfillmentRate = computeFulfillmentRate(configs.supplierReliabilityConfig, playerDecisions.supplier);
+
+  // Own riders can carry riders x hoursPerWeek x itemsPerHour units a week;
+  // anything beyond that goes to the third party at a per-order fee. Step 4
+  // can't compute this itself — it doesn't know how much demand the player
+  // will win, which only falls out of the competition here.
+  const throughput = configs.deliveryConfig?.riderThroughput;
+  const riderWeeklyCapacity =
+    (playerDecisions.stepFour?.deliveryFleet?.ridersPerCity || 0) *
+    (throughput?.hoursPerWeek ?? 40) *
+    (throughput?.itemsPerHour ?? 10);
 
   return {
     qualityLevel, stepMultipliers, qualityPricing, heightPricePoints,
     segmentQualification, corporateSpend, techCost, marketingCost,
-    othersMultiplier, unitCostBasis, fulfillmentRate
+    othersMultiplier, unitCostBasis, riderWeeklyCapacity
   };
+}
+
+/**
+ * Stock left in the warehouse at the end of the previous round. Rounds are
+ * consecutive months of the same business, so inventory carries; a player who
+ * over-ordered in round 1 starts round 2 already holding it.
+ *
+ * Returns 0 for round 1, or when the previous round hasn't been scored yet —
+ * in which case there is nothing to carry rather than an error.
+ */
+async function previousRoundClosingInventory(userId, simulationId, groupId, roundNumber) {
+  if (roundNumber <= 1) return 0;
+  const previous = await PlayerRoundResult.findOne({
+    userId, simulationId, groupId, roundNumber: roundNumber - 1
+  }).select("closingInventory");
+  return previous?.closingInventory || 0;
 }
 
 /**
@@ -141,11 +179,7 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
       configs.hrOpsMultiplierConfig,
       configs.operationsStaffingConfig,
       playerDecisions.stepNine,
-      corporateSpendMinMax,
-      {
-        ridersPerCity: playerDecisions.stepFour?.deliveryFleet?.ridersPerCity,
-        riderCostPerMonth: configs.deliveryConfig?.ownFleet?.riderCostPerMonth?.min
-      }
+      corporateSpendMinMax
     );
 
     const competitiveAverage = {
@@ -187,7 +221,9 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
       fleetCost: playerDecisions.stepFour?.totalMonthlyCost || 0,
       techCost: playerDecisions.stepFive?.totalTechnologyCost || 0,
       marketingCost: playerDecisions.stepEight?.totalCost || 0,
-      hrCost: playerDecisions.stepNine?.totalMonthlyCost || 0
+      hrCost: playerDecisions.stepNine?.totalMonthlyCost || 0,
+      // Set by the weekly cycle below, from units actually shipped.
+      thirdPartyDeliveryCost: 0
     }
   }));
 
@@ -211,10 +247,7 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
         allPlayersSegmentScores: enrolledScores,
         thisPlayerIndex: poolIndex,
         categorySegmentDemand: category.segmentDemand,
-        localCompetitionIntensityPercent: intensity,
-        qualityPricing: basics[playerIndex].qualityPricing,
-        unitCostBasis: basics[playerIndex].unitCostBasis,
-        fulfillmentRate: basics[playerIndex].fulfillmentRate
+        localCompetitionIntensityPercent: intensity
       });
 
       const segments = {};
@@ -238,25 +271,58 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
     });
   }
 
-  // Warehouse capacity is one shared cap across every category, so it can
-  // only be applied now that each player's full category set is known —
-  // which is also why the revenue/COGS totals are summed here rather than
-  // accumulated inside the per-category loop above.
-  results.forEach((r, playerIndex) => {
-    const totals = applyPooledWarehouseCapacity({
-      perCategory: r.perCategory,
-      warehouseCapacity: decisions[playerIndex].productCategory?.warehouseCapacity,
-      qualityPricing: basics[playerIndex].qualityPricing,
-      unitCostBasis: basics[playerIndex].unitCostBasis
-    });
-    r.totalRevenue = totals.totalRevenue;
-    r.totalCogs = totals.totalCogs;
-    r.totalGrossProfit = totals.totalGrossProfit;
-  });
+  // Supply, warehouse space and delivery are all pooled across every
+  // category, so the weekly cycle can only run once each player's full
+  // category set is known. This is what turns market share into units sold.
+  const reliabilityCfg = configs.supplierReliabilityConfig;
+  const thirdPartyCostPerOrder = configs.deliveryConfig?.thirdPartyDelivery?.costPerOrder?.min ?? 0;
+
+  await Promise.all(
+    results.map(async (r, playerIndex) => {
+      const supplier = decisions[playerIndex].supplier;
+      const band = supplier?.reliability != null
+        ? (reliabilityCfg?.reliabilityBands || []).find(
+            (b) => supplier.reliability >= b.minStars && supplier.reliability <= b.maxStars
+          )
+        : null;
+
+      const openingInventory = await previousRoundClosingInventory(
+        decisions[playerIndex].user._id, simulationId, groupId, roundNumber
+      );
+
+      const outcome = runWeeklyFulfillment({
+        perCategory: r.perCategory,
+        weeksPerRound: reliabilityCfg?.weeksPerRound,
+        openingInventory,
+        warehouseCapacity: decisions[playerIndex].productCategory?.warehouseCapacity,
+        riderWeeklyCapacity: basics[playerIndex].riderWeeklyCapacity,
+        thirdPartyCostPerOrder,
+        deliveryTimeWeeks: supplier?.deliveryTimeWeeks || 0,
+        steadyStateRate: band?.fulfillmentRate ?? 1,
+        rampUpRate: reliabilityCfg?.rampUpFulfillmentRate ?? 1,
+        qualityPricing: basics[playerIndex].qualityPricing,
+        unitCostBasis: basics[playerIndex].unitCostBasis
+      });
+
+      r.totalRevenue = outcome.totalRevenue;
+      r.totalCogs = outcome.totalCogs;
+      r.totalGrossProfit = outcome.totalGrossProfit;
+      r.openingInventory = openingInventory;
+      r.closingInventory = outcome.closingInventory;
+      r.weeklyFulfillment = outcome.weekly;
+      // Third-party delivery is billed on what this player actually shipped
+      // beyond their own fleet. Step 4 can only guess at that, so it no
+      // longer charges for it — see controllers/stepFour.controller.js.
+      r.costBreakdown.thirdPartyDeliveryCost = outcome.thirdPartyCost;
+      r.thirdPartyOrders = outcome.thirdPartyOrders;
+    })
+  );
 
   results.forEach((r, playerIndex) => {
-    const { riderCost, fleetCost, techCost, marketingCost, hrCost } = r.costBreakdown;
-    const operatingProfitBeforeBonus = r.totalGrossProfit - (riderCost + fleetCost + techCost + marketingCost + hrCost);
+    const { riderCost, fleetCost, techCost, marketingCost, hrCost, thirdPartyDeliveryCost } = r.costBreakdown;
+    const operatingProfitBeforeBonus =
+      r.totalGrossProfit -
+      (riderCost + fleetCost + techCost + marketingCost + hrCost + (thirdPartyDeliveryCost || 0));
 
     // Supplier turnover bonus: rewards crossing the chosen supplier's
     // revenue threshold, previously-dead Supplier.turnoverBonusPercent/

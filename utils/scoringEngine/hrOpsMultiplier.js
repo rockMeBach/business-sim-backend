@@ -29,11 +29,8 @@ function computeCorporateTeamSpend(operationsStaffingConfig, stepNineDoc) {
  *
  * @param groupMinMaxCorporateSpend {{min: number, max: number}} across the
  *   whole group for this round (computed once by the orchestrator).
- * @param riderBonusContext {{ridersPerCity: number, riderCostPerMonth: number}}
- *   needed to back-derive the Rider Bonus Budget percentage (Excel row 72
- *   bands on a percentage, not the rupee amount the app actually stores).
  */
-function computeHROpsStepMultiplier(hrOpsConfig, operationsStaffingConfig, stepNineDoc, groupMinMaxCorporateSpend, riderBonusContext) {
+function computeHROpsStepMultiplier(hrOpsConfig, operationsStaffingConfig, stepNineDoc, groupMinMaxCorporateSpend) {
   if (!hrOpsConfig || !stepNineDoc) {
     return forEachSegment(() => 1);
   }
@@ -50,17 +47,12 @@ function computeHROpsStepMultiplier(hrOpsConfig, operationsStaffingConfig, stepN
   const educationSpend = stepNineDoc.educationBudgetPerRider || 0;
   const educationMultiplier = divisor ? 1 + (educationSpend * rate) / divisor : 1;
 
-  const riderBonusSpend = stepNineDoc.riderBonusBudget || 0;
-  const ridersPerCity = riderBonusContext?.ridersPerCity || 0;
-  const riderCostPerMonth = riderBonusContext?.riderCostPerMonth || 0;
-  const rawRiderBonusPercent = ridersPerCity > 0 && riderCostPerMonth > 0
-    ? riderBonusSpend / (ridersPerCity * riderCostPerMonth)
-    : 0;
-  // The rupee budget was itself computed upstream as percent * ridersPerCity
-  // * riderCostPerMonth, so dividing it back out reintroduces float noise
-  // (e.g. 0.05 round-trips as 0.05000000000000001) that can push an exact
-  // band boundary into the wrong band. Round off that noise before banding.
-  const riderBonusPercent = Math.round(rawRiderBonusPercent * 1e6) / 1e6;
+  // The player now picks this percentage directly (Step 6 "Bonus per
+  // Employee"), so it's read as-is. It used to be stored in rupees and
+  // divided back out by ridersPerCity * riderCostPerMonth, which silently
+  // banded everyone at 0% whenever those two didn't match the payroll the
+  // rupee figure was actually based on. Stored as 0-20; bands are 0-1.
+  const riderBonusPercent = (stepNineDoc.riderBonusPercent || 0) / 100;
   // Mirrors Excel row 72's nested IF exactly: IF(x < low.maxPercent, low,
   // IF(x > high.minPercent, high, mid)) — an exact boundary value (e.g.
   // 0.05) must fall into the middle band, not the low one a plain

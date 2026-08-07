@@ -31,7 +31,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 # One website-budget slider unit in rupees; mirrors utils/websiteBudget.js.
-WEBSITE_BUDGET_UNIT = 100000
+WEBSITE_BUDGET_UNIT = 35000
 
 SIM_NAME = "QuickCommerce Round 1"
 SEGMENTS = ["premium", "standard", "basic", "discount"]
@@ -207,7 +207,7 @@ def main():
         )
     totals = [sum((c.get("segmentDemand") or {}).get(s, 0) for c in categories) for s in SEGMENTS]
     b.line("TOTAL", [], context=tuple(totals), bold=True)
-    b.line("Monthly Warehouse Capacity",
+    b.line("Weekly Warehouse Capacity",
            per_player(lambda uid: ppc.get(uid, {}).get("warehouseCapacity")),
            number_format=MONEY)
     b.blank(2)
@@ -263,7 +263,7 @@ def main():
     # Slider value in lakhs, plus what that actually costs in rupees. The Cost
     # column was blank here because this row has no config cost — the spend is
     # derived from the player's own slider (1 unit = ₹1,00,000).
-    b.line("Website Budget (L)",
+    b.line("Website Budget (notches)",
            per_player(lambda uid: step_five.get(uid, {}).get("websiteBudget")),
            context=("Slider", None, WEBSITE_BUDGET_UNIT))
     b.line("Website Budget cost",
@@ -338,9 +338,12 @@ def main():
     b.line("Education Budget/Rider",
            per_player(lambda uid: step_nine.get(uid, {}).get("educationBudgetPerRider")),
            context=("Slider",), number_format=MONEY)
-    b.line("Rider Bonus Budget",
-           per_player(lambda uid: step_nine.get(uid, {}).get("riderBonusBudget")),
-           context=("Slider",), number_format=MONEY)
+    b.line("Bonus per Employee (%)",
+           per_player(lambda uid: step_nine.get(uid, {}).get("riderBonusPercent")),
+           context=("Slider",), number_format=DEC2)
+    b.line("    Bonus cost",
+           per_player(lambda uid: step_nine.get(uid, {}).get("totalBonusCost")),
+           number_format=MONEY)
     b.line("HR Cost / month",
            per_player(lambda uid: step_nine.get(uid, {}).get("totalMonthlyCost")),
            number_format=MONEY, bold=True)

@@ -1,4 +1,5 @@
 const User = require("../../models/User");
+const PlayerStepOne = require("../../models/PlayerStepOne");
 const PlayerStepFour = require("../../models/PlayerStepFour");
 const PlayerStepFive = require("../../models/PlayerStepFive");
 const PlayerStepEight = require("../../models/PlayerStepEight");
@@ -22,8 +23,12 @@ async function fetchGroupRoundDecisions(simulationId, groupId, roundNumber) {
     users.map(async (user) => {
       const uid = user._id;
 
-      const [stepFour, stepFive, stepEight, stepNine, productCategory, sourcingSelection, pricing] =
+      const [stepOne, stepFour, stepFive, stepEight, stepNine, productCategory, sourcingSelection, pricing] =
         await Promise.all([
+          // Step 1 carries the player's chosen market positioning, which
+          // decides WHICH segments they compete in. It wasn't fetched here at
+          // all, so that choice had no effect on scoring whatsoever.
+          PlayerStepOne.findOne({ userId: uid, simulationId, roundNumber }),
           PlayerStepFour.findOne({ userId: uid, simulationId, roundNumber }),
           PlayerStepFive.findOne({ userId: uid, simulationId, roundNumber }),
           PlayerStepEight.findOne({ userId: String(uid), simulationId: String(simulationId), roundNumber }),
@@ -37,7 +42,7 @@ async function fetchGroupRoundDecisions(simulationId, groupId, roundNumber) {
         ? await SourcingSupplier.findById(sourcingSelection.supplierId)
         : null;
 
-      return { user, stepFour, stepFive, stepEight, stepNine, productCategory, supplier, pricing };
+      return { user, stepOne, stepFour, stepFive, stepEight, stepNine, productCategory, supplier, pricing };
     })
   );
 }

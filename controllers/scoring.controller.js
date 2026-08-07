@@ -29,6 +29,10 @@ exports.calculateRound = async (req, res) => {
             turnoverBonus: r.turnoverBonus,
             totalOperatingProfit: r.totalOperatingProfit,
             costBreakdown: r.costBreakdown,
+            openingInventory: r.openingInventory,
+            closingInventory: r.closingInventory,
+            thirdPartyOrders: r.thirdPartyOrders,
+            weeklyFulfillment: r.weeklyFulfillment,
             score: r.score,
             rank: r.rank,
             computedAt: new Date()

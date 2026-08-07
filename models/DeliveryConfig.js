@@ -85,6 +85,14 @@ const DeliveryConfigSchema = new mongoose.Schema({
     belowMultiplier:   { type: Number, default: 0.85 },
     optimalMultiplier: { type: Number, default: 1.05 },
     aboveMultiplier:   { type: Number, default: 0.95 }
+  },
+
+  // How much one rider can physically move in a week. Used to check the
+  // weekly warehouse capacity a player enters against the fleet they hired —
+  // capacity you can't deliver is capacity you don't have.
+  riderThroughput: {
+    hoursPerWeek: { type: Number, default: 40 },
+    itemsPerHour: { type: Number, default: 10 }
   }
 });
 

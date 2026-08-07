@@ -356,8 +356,8 @@ def main():
     # ---------------- Step 9 ----------------
     ws = sheet(wb, "Step9 HR & Staffing", [
         "Player", "Round", "Founders", "Operations Team", "Tech Team", "Marketing Team",
-        "Supply Chain Team", "Category Team", "Education Budget/Rider", "Rider Bonus Budget",
-        "Total Monthly Cost",
+        "Supply Chain Team", "Category Team", "Education Budget/Rider", "Bonus per Employee (%)",
+        "Bonus Cost", "Total Monthly Cost",
         "KPI Quality", "KPI Speed", "KPI Coverage", "KPI Scalability", "KPI Customer Satisfaction",
     ])
     for d in step9:
@@ -367,11 +367,11 @@ def main():
             name_of.get(str(d.get("userId")), "?"), d.get("roundNumber"),
             ct.get("founders"), ct.get("operationsTeam"), ct.get("techTeam"),
             ct.get("marketingTeam"), ct.get("supplyChainTeam"), ct.get("categoryTeam"),
-            d.get("educationBudgetPerRider"), d.get("riderBonusBudget"), d.get("totalMonthlyCost"),
+            d.get("educationBudgetPerRider"), d.get("riderBonusPercent"), d.get("totalBonusCost"), d.get("totalMonthlyCost"),
             k.get("quality"), k.get("speed"), k.get("coverage"),
             k.get("scalability"), k.get("customerSatisfaction"),
         ])
-    fmt_cols(ws, [9, 10, 11], MONEY)
+    fmt_cols(ws, [9, 11, 12], MONEY)
     autosize(ws)
 
     # ---------------- Product categories ----------------

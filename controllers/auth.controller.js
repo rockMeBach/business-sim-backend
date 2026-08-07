@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const PlayerRoundResult = require("../models/PlayerRoundResult");
 const Simulation = require("../models/Simulation");
+const Group = require("../models/Group");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
@@ -52,13 +53,20 @@ exports.login = async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    const { currentRound, maxRounds } = await deriveRoundProgress(user);
+    const [{ currentRound, maxRounds }, group] = await Promise.all([
+      deriveRoundProgress(user),
+      Group.findById(user.groupId)
+    ]);
 
     res.json({
       token,
       userId: user._id,
+      username: user.username,
       simulationId: user.simulationId,
       groupId: user.groupId,
+      // Usernames repeat across cohorts, so the group name is the only thing
+      // that identifies WHICH player1 this session is.
+      groupName: group?.name || "",
       role: user.role,
       currentRound,
       maxRounds
@@ -98,13 +106,17 @@ exports.me = async (req, res) => {
       return res.status(404).json({ message: "User no longer exists" });
     }
 
-    const { currentRound, maxRounds } = await deriveRoundProgress(user);
+    const [{ currentRound, maxRounds }, group] = await Promise.all([
+      deriveRoundProgress(user),
+      Group.findById(user.groupId)
+    ]);
 
     res.json({
       userId: user._id,
       username: user.username,
       simulationId: user.simulationId,
       groupId: user.groupId,
+      groupName: group?.name || "",
       role: user.role,
       currentRound,
       maxRounds

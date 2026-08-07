@@ -121,24 +121,30 @@ exports.calculateDeliveryImpact = ({
   }
 
 
+  // estimatedMonthlyDemand is the WHOLE market's demand, not this player's —
+  // Step 4 runs before any competition has happened, so it cannot know what
+  // this player will actually win. That made third-party delivery a flat
+  // ~₹2.7L charge every player paid identically whether they shipped 300
+  // units or 2,400.
+  //
+  // The real bill is now raised by the scoring engine, which prices it off
+  // units this player genuinely shipped beyond their own fleet
+  // (utils/scoringEngine/weeklyFulfillment.js). What's computed here is an
+  // indicative figure for the Step 4 screen only, and is NOT added to `cost`.
   const excessDemand = Math.max(0, estimatedMonthlyDemand - ownFleetCapacity);
   const thirdPartyIsUsed = excessDemand > 0;
 
   let thirdPartyDetails = {
     isUsed: thirdPartyIsUsed,
     ordersHandled: excessDemand,
-    cost: 0
+    cost: 0,
+    isEstimate: true
   };
 
   if (thirdPartyIsUsed) {
-    const thirdPartyCost =
-      excessDemand *
-      config.thirdPartyDelivery.costPerOrder.min;
+    thirdPartyDetails.cost = excessDemand * config.thirdPartyDelivery.costPerOrder.min;
 
-    cost += thirdPartyCost;
-    thirdPartyDetails.cost = thirdPartyCost;
-
-    if (thirdPartyCost > 0) {
+    if (thirdPartyDetails.cost > 0) {
       kpis.flexibility += 20;
       kpis.scalability += 20;
       kpis.deliveryQuality -= 5;

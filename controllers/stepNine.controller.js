@@ -45,6 +45,17 @@ async function calculateOperationsImpact(payload) {
     "scalability"
   );
 
+  // Bonus is a percentage of payroll picked on the HR screen, which computes
+  // the rupee figure against the real per-employee salaries it has loaded
+  // (this controller only sees headcount buckets and config salary bands, so
+  // it can't reproduce that number). Charge what was sent; fall back to
+  // applying the percentage to the salary total above when it wasn't.
+  const bonusPercent = payload.riderBonusPercent || 0;
+  const bonusCost = typeof payload.totalBonusCost === "number"
+    ? payload.totalBonusCost
+    : (totalCost * bonusPercent) / 100;
+  totalCost += bonusCost;
+
   kpis.speed = Math.floor(kpis.coverage * 0.5);
   kpis.customerSatisfaction = Math.floor(
     kpis.quality * 0.4 + kpis.speed * 0.3
