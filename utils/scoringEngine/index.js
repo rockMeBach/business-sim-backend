@@ -138,12 +138,18 @@ function computePerPlayerBasics(playerDecisions, configs) {
  * Returns 0 for round 1, or when the previous round hasn't been scored yet —
  * in which case there is nothing to carry rather than an error.
  */
-async function previousRoundClosingInventory(userId, simulationId, groupId, roundNumber) {
-  if (roundNumber <= 1) return 0;
+async function previousRoundCarryOver(userId, simulationId, groupId, roundNumber) {
+  const empty = { inventory: 0, backlog: 0, pendingSupply: 0 };
+  if (roundNumber <= 1) return empty;
   const previous = await PlayerRoundResult.findOne({
     userId, simulationId, groupId, roundNumber: roundNumber - 1
-  }).select("closingInventory");
-  return previous?.closingInventory || 0;
+  }).select("closingInventory closingBacklog closingPendingSupply");
+  if (!previous) return empty;
+  return {
+    inventory: previous.closingInventory || 0,
+    backlog: previous.closingBacklog || 0,
+    pendingSupply: previous.closingPendingSupply || 0
+  };
 }
 
 /**
@@ -286,14 +292,16 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
           )
         : null;
 
-      const openingInventory = await previousRoundClosingInventory(
+      const carry = await previousRoundCarryOver(
         decisions[playerIndex].user._id, simulationId, groupId, roundNumber
       );
 
       const outcome = runWeeklyFulfillment({
         perCategory: r.perCategory,
         weeksPerRound: reliabilityCfg?.weeksPerRound,
-        openingInventory,
+        openingInventory: carry.inventory,
+        openingBacklog: carry.backlog,
+        openingPendingSupply: carry.pendingSupply,
         warehouseCapacity: decisions[playerIndex].productCategory?.warehouseCapacity,
         riderWeeklyCapacity: basics[playerIndex].riderWeeklyCapacity,
         thirdPartyCostPerOrder,
@@ -307,8 +315,12 @@ async function computeRoundScores(simulationId, groupId, roundNumber) {
       r.totalRevenue = outcome.totalRevenue;
       r.totalCogs = outcome.totalCogs;
       r.totalGrossProfit = outcome.totalGrossProfit;
-      r.openingInventory = openingInventory;
+      r.openingInventory = carry.inventory;
+      r.openingBacklog = carry.backlog;
+      r.openingPendingSupply = carry.pendingSupply;
       r.closingInventory = outcome.closingInventory;
+      r.closingBacklog = outcome.closingBacklog;
+      r.closingPendingSupply = outcome.closingPendingSupply;
       r.weeklyFulfillment = outcome.weekly;
       // Third-party delivery is billed on what this player actually shipped
       // beyond their own fleet. Step 4 can only guess at that, so it no

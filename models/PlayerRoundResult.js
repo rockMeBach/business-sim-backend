@@ -75,6 +75,13 @@ const playerRoundResultSchema = new mongoose.Schema({
   // months, so what isn't sold is still there next round.
   openingInventory: Number,
   closingInventory: Number,
+  // Demand won but not yet served. Nothing is thrown away — it queues and
+  // carries into the next round.
+  openingBacklog: Number,
+  closingBacklog: Number,
+  // Stock the supplier is holding because the warehouse had no room for it.
+  openingPendingSupply: Number,
+  closingPendingSupply: Number,
   thirdPartyOrders: Number,
 
   // The week-by-week run inside this round: demand, what the supplier
@@ -83,15 +90,17 @@ const playerRoundResultSchema = new mongoose.Schema({
     {
       week: Number,
       demand: Number,
+      backlogIn: Number,
+      totalDemand: Number,
       warehouseCapacity: Number,
       riderCapacity: Number,
       supplyRate: Number,
       received: Number,
-      refusedForSpace: Number,
+      pendingSupply: Number,
       sold: Number,
       ownFleetDelivered: Number,
       thirdPartyDelivered: Number,
-      unmetDemand: Number,
+      backlogOut: Number,
       closingInventory: Number
     }
   ],

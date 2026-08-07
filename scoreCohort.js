@@ -69,6 +69,10 @@ const inLakhs = (n) => `${(Number(n || 0) / 100000).toFixed(2)}L`;
             costBreakdown: r.costBreakdown,
             openingInventory: r.openingInventory,
             closingInventory: r.closingInventory,
+            openingBacklog: r.openingBacklog,
+            closingBacklog: r.closingBacklog,
+            openingPendingSupply: r.openingPendingSupply,
+            closingPendingSupply: r.closingPendingSupply,
             thirdPartyOrders: r.thirdPartyOrders,
             weeklyFulfillment: r.weeklyFulfillment,
             score: r.score,
@@ -97,9 +101,9 @@ const inLakhs = (n) => `${(Number(n || 0) / 100000).toFixed(2)}L`;
       console.log(`     positioning chosen=[${chose.join(", ") || "none"}]  scored in=[${[...scoredSegs].join(", ") || "none"}]`);
       const cb = r.costBreakdown || {};
       console.log(`     costs: ${Object.entries(cb).map(([k, v]) => `${k}=${inLakhs(v)}`).join("  ")}`);
-      console.log(`     inventory: opening=${Math.round(r.openingInventory)} closing=${Math.round(r.closingInventory)}  3P orders=${Math.round(r.thirdPartyOrders)}`);
+      console.log(`     carry-over: inventory ${Math.round(r.openingInventory)}->${Math.round(r.closingInventory)}  backlog ${Math.round(r.openingBacklog)}->${Math.round(r.closingBacklog)}  in-transit ${Math.round(r.openingPendingSupply)}->${Math.round(r.closingPendingSupply)}  3P orders=${Math.round(r.thirdPartyOrders)}`);
       for (const w of r.weeklyFulfillment || []) {
-        console.log(`       wk${w.week}: demand=${Math.round(w.demand)} received=${Math.round(w.received)} refused=${Math.round(w.refusedForSpace)} sold=${Math.round(w.sold)} own=${Math.round(w.ownFleetDelivered)} 3P=${Math.round(w.thirdPartyDelivered)} lost=${Math.round(w.unmetDemand)} stock=${Math.round(w.closingInventory)}`);
+        console.log(`       wk${w.week}: fresh=${Math.round(w.demand)} +backlog=${Math.round(w.backlogIn)} =owed ${Math.round(w.totalDemand)} | received=${Math.round(w.received)} inTransit=${Math.round(w.pendingSupply)} | sold=${Math.round(w.sold)} stock=${Math.round(w.closingInventory)} backlogOut=${Math.round(w.backlogOut)}`);
       }
       for (const cat of r.perCategory) {
         const active = Object.entries(cat.segments || {}).filter(([, s]) => s.qualifies);

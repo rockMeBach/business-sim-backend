@@ -448,7 +448,7 @@ def main():
             ("Market Share", "marketShare", "0.0000"),
             ("Expected Sale", "expectedSale", MONEY),
             ("Actual Sold", "actualSold", MONEY),
-            ("Wasted Demand", "wastedDemand", MONEY),
+            ("Still Queued at Round End", "wastedDemand", MONEY),
             ("Expected Revenue", "expectedRevenue", MONEY),
             ("COGS", "cogs", MONEY),
             ("Gross Profit", "grossProfit", MONEY),
@@ -472,6 +472,60 @@ def main():
                 return None
         return node
 
+    # ---------------- WEEKLY OPERATING CYCLE ----------------
+    # A round is one month of money but four weeks of stock and delivery.
+    # Demand won by market share is pushed through supply -> warehouse ->
+    # riders, week by week; this is where the sales are actually decided.
+    week_counts = [len(results.get(pl["id"], {}).get("weeklyFulfillment") or []) for pl in players]
+    weeks = max(week_counts) if week_counts else 0
+
+    if weeks:
+        b.step("WEEKLY OPERATING CYCLE")
+
+        def week_field(uid, index, key):
+            rows = results.get(uid, {}).get("weeklyFulfillment") or []
+            return rows[index].get(key) if index < len(rows) else None
+
+        for index in range(weeks):
+            b.line(f"Week {index + 1}", [None] * len(players), bold=True)
+            for label, key in [
+                ("    New demand", "demand"),
+                ("    Queued from earlier", "backlogIn"),
+                ("    Total owed", "totalDemand"),
+                ("    Warehouse capacity", "warehouseCapacity"),
+                ("    Rider capacity", "riderCapacity"),
+                ("    Received from supplier", "received"),
+                ("    Still in transit", "pendingSupply"),
+                ("    Sold", "sold"),
+                ("    Delivered by own fleet", "ownFleetDelivered"),
+                ("    Delivered by 3rd party", "thirdPartyDelivered"),
+                ("    Stock left over", "closingInventory"),
+                ("    Still waiting (queued)", "backlogOut"),
+            ]:
+                b.line(label,
+                       per_player(lambda uid, i=index, k=key: week_field(uid, i, k)),
+                       number_format=MONEY)
+
+        # Nothing is destroyed: unserved customers queue, and stock the
+        # warehouse had no room for waits with the supplier. All three carry
+        # into the next round.
+        b.line("Opening inventory", per_player(lambda uid: res_field(uid, "openingInventory")),
+               number_format=MONEY, bold=True)
+        b.line("Closing inventory", per_player(lambda uid: res_field(uid, "closingInventory")),
+               number_format=MONEY, bold=True)
+        b.line("Opening backlog", per_player(lambda uid: res_field(uid, "openingBacklog")),
+               number_format=MONEY, bold=True)
+        b.line("Closing backlog", per_player(lambda uid: res_field(uid, "closingBacklog")),
+               number_format=MONEY, bold=True)
+        b.line("Opening stock in transit", per_player(lambda uid: res_field(uid, "openingPendingSupply")),
+               number_format=MONEY, bold=True)
+        b.line("Closing stock in transit", per_player(lambda uid: res_field(uid, "closingPendingSupply")),
+               number_format=MONEY, bold=True)
+        b.line("Orders via 3rd party", per_player(lambda uid: res_field(uid, "thirdPartyOrders")),
+               number_format=MONEY, bold=True)
+        b.blank(2)
+
+    b.step("PROFIT & LOSS")
     b.line("Expected Revenue", per_player(lambda uid: res_field(uid, "totalRevenue")), number_format=MONEY)
     b.line("COGS", per_player(lambda uid: res_field(uid, "totalCogs")), number_format=MONEY)
     b.line("Gross Profit", per_player(lambda uid: res_field(uid, "totalGrossProfit")),
@@ -481,6 +535,10 @@ def main():
     b.line("Tech Expenses", per_player(lambda uid: res_field(uid, "costBreakdown", "techCost")), number_format=MONEY)
     b.line("Marketing Expenses", per_player(lambda uid: res_field(uid, "costBreakdown", "marketingCost")), number_format=MONEY)
     b.line("HR Expenses", per_player(lambda uid: res_field(uid, "costBreakdown", "hrCost")), number_format=MONEY)
+    # Billed by the scoring engine on units the own fleet couldn't carry, not
+    # by Step 4 — see utils/scoringEngine/weeklyFulfillment.js.
+    b.line("3rd-Party Delivery", per_player(lambda uid: res_field(uid, "costBreakdown", "thirdPartyDeliveryCost")),
+           number_format=MONEY)
     b.line("Turnover Bonus", per_player(lambda uid: res_field(uid, "turnoverBonus")), number_format=MONEY)
     b.line("Operating Profit", per_player(lambda uid: res_field(uid, "totalOperatingProfit")),
            number_format=MONEY, bold=True)

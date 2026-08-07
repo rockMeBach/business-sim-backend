@@ -16,18 +16,25 @@ const { SEGMENTS } = require("./segments");
  *                    party at a per-order fee. Riders are a cost boundary,
  *                    not a wall.
  *
- * Rules that the brief left open, decided here:
+ * NOTHING IS DESTROYED. Three things queue instead:
  *
- *   - Unmet demand is LOST, never queued. This is quick commerce; a customer
- *     who can't be served in minutes buys elsewhere.
- *   - Unsold stock CARRIES OVER, week to week and round to round. Without
- *     that, "is there space in the warehouse" is not a question anyone can
- *     ask — you'd only ever be capping throughput.
+ *   - Unserved demand BACKLOGS. A customer you couldn't serve this week is
+ *     still waiting next week, and gets served in proportion to what their
+ *     segment is owed. Whatever is still queued when the round ends carries
+ *     into the next round.
+ *   - Stock the warehouse had no room for stays IN TRANSIT with the supplier
+ *     rather than being cancelled, and lands the moment shelf space frees up.
+ *   - Unsold stock CARRIES OVER, week to week and round to round.
+ *
  *   - Warehouse capacity caps stock HELD at any moment, which is what a
  *     warehouse physically does.
  *   - Exceeding rider capacity costs money rather than losing the sale,
  *     because third-party delivery already exists in this game as the
  *     expensive overflow option.
+ *
+ * Consequence worth knowing: with a warehouse permanently smaller than
+ * demand, backlog and in-transit stock both grow without limit and never
+ * clear. That is the model as specified — there is no expiry rule.
  *
  * SUPPLY SCHEDULE
  *
@@ -77,6 +84,8 @@ function runWeeklyFulfillment({
   perCategory,
   weeksPerRound = 4,
   openingInventory = 0,
+  openingBacklog = 0,
+  openingPendingSupply = 0,
   warehouseCapacity,
   riderWeeklyCapacity = 0,
   thirdPartyCostPerOrder = 0,
@@ -92,14 +101,16 @@ function runWeeklyFulfillment({
   const unitCost = qualityPricing.cpMult * cogsUnitCost;
 
   // Flatten to a list of demand cells so a week's sales can be split back
-  // across every category+segment in proportion to what each one asked for.
+  // across every category+segment. Each cell keeps its own backlog, so a
+  // segment that went unserved gets first call on next week's stock in
+  // proportion to what it is still owed.
   const cells = [];
   for (const cat of perCategory) {
     for (const segment of SEGMENTS) {
       const seg = cat.segments[segment];
       seg.actualSold = 0;
       seg.wastedDemand = 0;
-      cells.push({ seg, weeklyDemand: (seg.expectedSale || 0) / weeks });
+      cells.push({ seg, weeklyDemand: (seg.expectedSale || 0) / weeks, backlog: 0 });
     }
   }
   const weeklyDemandTotal = cells.reduce((sum, c) => sum + c.weeklyDemand, 0);
@@ -112,51 +123,75 @@ function runWeeklyFulfillment({
     rampUpRate
   });
 
+  // Backlog carried in from last round is spread over the cells the same way
+  // this round's demand is, since the old per-segment split isn't stored.
+  if (openingBacklog > 0 && weeklyDemandTotal > 0) {
+    for (const cell of cells) {
+      cell.backlog = openingBacklog * (cell.weeklyDemand / weeklyDemandTotal);
+    }
+  }
+
   let inventory = Math.max(0, openingInventory);
+  let pendingSupply = Math.max(0, openingPendingSupply);
   let thirdPartyOrders = 0;
   const weekly = [];
 
   for (let week = 1; week <= weeks; week++) {
-    const offered = schedule[week - 1];
+    // This week's shipment joins whatever the supplier is still holding for
+    // us. Stock that wouldn't fit isn't cancelled — it stays in transit and
+    // comes in as soon as shelf space appears.
+    pendingSupply += schedule[week - 1];
+
     const freeSpace = warehouseCapacity == null ? Infinity : Math.max(0, warehouseCapacity - inventory);
-    const received = Math.min(offered, freeSpace);
-    const refused = offered - received; // supplier had it; there was nowhere to put it
+    const received = Math.min(pendingSupply, freeSpace);
+    pendingSupply -= received;
+
+    const backlogIn = cells.reduce((sum, c) => sum + c.backlog, 0);
+    const demandThisWeek = weeklyDemandTotal + backlogIn;
 
     const available = inventory + received;
-    const sold = Math.min(available, weeklyDemandTotal);
+    const sold = Math.min(available, demandThisWeek);
 
     const ownFleetDelivered = Math.min(sold, riderWeeklyCapacity);
     const thirdPartyDelivered = sold - ownFleetDelivered;
     thirdPartyOrders += thirdPartyDelivered;
 
     inventory = available - sold;
-    const unmet = weeklyDemandTotal - sold;
 
-    // Split this week's sales back over the cells proportionally.
-    const share = weeklyDemandTotal > 0 ? sold / weeklyDemandTotal : 0;
+    // Serve every cell in proportion to what it is owed this week — its fresh
+    // demand plus anything still queued from earlier weeks.
+    const share = demandThisWeek > 0 ? sold / demandThisWeek : 0;
     for (const cell of cells) {
-      const cellSold = cell.weeklyDemand * share;
+      const owed = cell.weeklyDemand + cell.backlog;
+      const cellSold = owed * share;
       cell.seg.actualSold += cellSold;
-      cell.seg.wastedDemand += cell.weeklyDemand - cellSold;
+      cell.backlog = owed - cellSold;
     }
 
     weekly.push({
       week,
       demand: weeklyDemandTotal,
+      backlogIn,
+      totalDemand: demandThisWeek,
       // Carried on every row so the Analysis table can show what the limits
       // were that week without re-deriving them from other documents.
       warehouseCapacity: warehouseCapacity == null ? null : warehouseCapacity,
       riderCapacity: riderWeeklyCapacity,
-      supplyRate: weeklyDemandTotal > 0 ? offered / weeklyDemandTotal : 0,
+      supplyRate: weeklyDemandTotal > 0 ? schedule[week - 1] / weeklyDemandTotal : 0,
       received,
-      refusedForSpace: refused,
+      pendingSupply,
       sold,
       ownFleetDelivered,
       thirdPartyDelivered,
-      unmetDemand: unmet,
+      backlogOut: demandThisWeek - sold,
       closingInventory: inventory
     });
   }
+
+  // Nothing was thrown away during the round — what's still queued at the end
+  // is what remains unserved, and it carries into the next round.
+  const closingBacklog = cells.reduce((sum, c) => sum + c.backlog, 0);
+  for (const cell of cells) cell.seg.wastedDemand = cell.backlog;
 
   let totalRevenue = 0, totalCogs = 0, totalGrossProfit = 0;
   for (const cat of perCategory) {
@@ -178,6 +213,8 @@ function runWeeklyFulfillment({
     thirdPartyOrders,
     thirdPartyCost: thirdPartyOrders * thirdPartyCostPerOrder,
     closingInventory: inventory,
+    closingBacklog,
+    closingPendingSupply: pendingSupply,
     weekly
   };
 }
